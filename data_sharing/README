@@ -1,0 +1,12 @@
+#on Android
+#Step1: sh ./build_android.sh
+
+#on macOs
+#Step1: sh ./build_macOs.sh
+#Step2: ./client_mac
+
+#on Windows
+#Step1: ./build_windows.ps1
+#Step2: ./client_windows -port 6668
+
+PowerShell   &".\build_windows.ps1"
