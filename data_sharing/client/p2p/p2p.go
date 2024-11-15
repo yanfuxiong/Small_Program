@@ -10,7 +10,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	rtkClipboard "rtk-cross-share/clipboard"
@@ -21,14 +20,13 @@ import (
 )
 
 func P2PRead(s net.Conn, ipAddr string, ctx context.Context, cancelFunc context.CancelFunc) {
-	//ipAddr := s.RemoteAddr().String()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 			rtkGlobal.Handler.CtxMutex.Lock()
-			if rtkGlobal.Handler.State.State != rtkCommon.UNINIT {
+			if rtkGlobal.Handler.State.State != rtkCommon.UNINIT && rtkGlobal.Handler.State.State != rtkCommon.PROCESSING_TRAN_ING {
 				rtkGlobal.Handler.CtxMutex.Unlock()
 				time.Sleep(100 * time.Millisecond)
 				continue
@@ -56,14 +54,10 @@ func P2PRead(s net.Conn, ipAddr string, ctx context.Context, cancelFunc context.
 }
 
 func HandleDataTransferRead(s net.Conn, ipAddr string, gotMsg rtkCommon.P2PMessage) bool {
-	var ip string
-	if len(strings.Split(ipAddr, ":")) == 1 {
-		ip = ipAddr
-	} else {
-		ip, _ = rtkUtils.SplitIP(ipAddr)
-	}
+	ip, _ := rtkUtils.SplitIP(ipAddr)
 
 	if (ip != rtkGlobal.Handler.SourceIP) && (rtkGlobal.Handler.SourceIP != rtkGlobal.NodeInfo.IPAddr.PublicIP) {
+		log.Printf("HandleDataTransferRead ip %v source ip %v nodeInfo ip %v  return false", ip, rtkGlobal.Handler.SourceIP, rtkGlobal.NodeInfo.IPAddr.PublicIP)
 		return false
 	}
 
@@ -85,28 +79,19 @@ func HandleDataTransferRead(s net.Conn, ipAddr string, gotMsg rtkCommon.P2PMessa
 				WriteToSocket(msg, s)
 			}
 			return true
-		} else if gotMsg.InbandCmd == rtkCommon.FILE_TRANS_INITIATE {
-			rtkPlatform.SendFileTransCmdCallback(rtkCommon.FILE_TRANS_REQUEST)
-		}
-
-		if gotMsg.FmtType == rtkCommon.FILE { //弹出文件接收确认框
-			fileSize := int64(gotMsg.CopySize.SizeHigh)<<32 | int64(gotMsg.CopySize.SizeLow)
-			rtkPlatform.ReceiveFileConfirm(fileSize)
+		} else if gotMsg.InbandCmd == rtkCommon.FILE_DROP_INITIATE {
+			rtkGlobal.Handler.SourceID = gotMsg.SourceID
+			rtkGlobal.Handler.SourceIP, _ = rtkUtils.SplitIP(ipAddr)
+			rtkGlobal.Handler.CopyDataSize.SizeHigh = gotMsg.CopySize.SizeHigh
+			rtkGlobal.Handler.CopyDataSize.SizeLow = gotMsg.CopySize.SizeLow
+			rtkPlatform.GoSetupFileDrop(gotMsg.SourceID, string(gotMsg.Buf), gotMsg.CopySize.SizeHigh, gotMsg.CopySize.SizeLow)
+			return true
 		}
 	} else if rtkGlobal.Handler.State.State == rtkCommon.PROCESSING_TRAN_ING {
 		if gotMsg.InbandCmd == rtkCommon.FILE_REQ_ACK {
 			rtkGlobal.Handler.State.State = rtkCommon.PROCESSING_TRAN_ING_ACK
 			return true
 		}
-	} else if rtkGlobal.Handler.State.State == rtkCommon.FILE_TRANS_INIT {
-		var msg = rtkCommon.P2PMessage{
-			SourceID:  rtkGlobal.NodeInfo.ID,
-			InbandCmd: rtkCommon.FILE_TRANS_INITIATE,
-			Hash:      "",
-			PacketID:  0,
-			FmtType:   "",
-		}
-		WriteToSocket(msg, s)
 	}
 
 	return false
@@ -126,6 +111,7 @@ func OpenSrcFile() error {
 		log.Println("Error seek file:", err)
 		return errSeek
 	}
+	log.Println("OpenSrcFile")
 	return nil
 }
 
@@ -135,11 +121,16 @@ func CloseSrcFile() {
 	}
 	rtkGlobal.Handler.SrcFile.Close()
 	rtkGlobal.Handler.SrcFile = nil
+	log.Println("CloseSrcFile")
 }
 
 func HandleSrcDataTransfer(s net.Conn, ipAddr string, fmtType rtkCommon.ClipboardFmtType) error {
 	defer func() {
 		rtkGlobal.Handler.State.State = rtkCommon.UNINIT
+		rtkGlobal.Handler.DstFilePath = ""
+		rtkGlobal.Handler.DstFile.Close()
+		rtkGlobal.Handler.DstFile = nil
+		rtkGlobal.Handler.AppointIpAddr = ""
 	}()
 
 	var msg = rtkCommon.P2PMessage{
@@ -196,25 +187,31 @@ func HandleDataPasteToCBProcess(msg rtkCommon.P2PMessage, ipAddr string) {
 		Content:  msg.Buf,
 		CopySize: msg.CopySize,
 	}
-	log.Printf("msg.CopySize.SizeLow:[%d]", msg.CopySize.SizeLow)
-	if cbData.Hash != rtkGlobal.CBData[ipAddr].Hash {
+
+	targetCbData, _ := rtkUtils.GetNodeCBData(ipAddr)
+	if cbData.Hash != targetCbData.Hash {
 		log.Printf("ReadFromSocket, HandleDataPasteToCBProcess Clipboard changed at %s: FmtType:%s %s len:[%d]\n", cbData.Hash, cbData.FmtType, ipAddr, len(cbData.Content) /*, string(cbData.Content)*/)
 		if cbData.FmtType == rtkCommon.TEXT {
 			go rtkPlatform.GoSetupDstPasteText([]byte(cbData.Content))
 		} else if cbData.FmtType == rtkCommon.FILE && msg.InbandCmd == rtkCommon.TEXT_TRAN {
 			rtkGlobal.Handler.SourceID = cbData.SourceID
 			rtkGlobal.Handler.SourceIP, _ = rtkUtils.SplitIP(ipAddr)
-			go rtkPlatform.GoSetupDstPasteFile(msg.SourceID, filepath.Base(string(cbData.Content)), msg.CopySize.SizeHigh, msg.CopySize.SizeLow)
+			rtkGlobal.Handler.CopyDataSize.SizeHigh = msg.CopySize.SizeHigh
+			rtkGlobal.Handler.CopyDataSize.SizeLow = msg.CopySize.SizeLow
+			go rtkPlatform.GoSetupDstPasteFile(msg.SourceID, string(cbData.Content), msg.CopySize.SizeHigh, msg.CopySize.SizeLow)
 		} else if cbData.FmtType == rtkCommon.IMAGE && msg.InbandCmd == rtkCommon.TEXT_TRAN {
 			rtkGlobal.Handler.SourceID = cbData.SourceID
 			rtkGlobal.Handler.SourceIP, _ = rtkUtils.SplitIP((ipAddr))
+			rtkGlobal.Handler.CopyDataSize.SizeHigh = msg.CopySize.SizeHigh
+			rtkGlobal.Handler.CopyDataSize.SizeLow = msg.CopySize.SizeLow
 			go rtkPlatform.GoSetupDstPasteImage(msg.SourceID, cbData.Content, msg.CopyImgHeader, msg.CopySize.SizeLow)
 		}
 
 		// Update all clipboard for every connected nodes
-		for k := range rtkGlobal.CBData {
-			rtkGlobal.CBData[k] = cbData
-		}
+		rtkGlobal.CBData.Range(func(key, value interface{}) bool {
+			rtkGlobal.CBData.Store(key, cbData)
+			return true
+		})
 	}
 }
 
@@ -237,16 +234,16 @@ func WatchP2PFileTransferState(resultChan chan<- bool) {
 }
 
 func HandleDataCopyProcess(s net.Conn, cbData rtkCommon.ClipBoardData, ipAddr string) {
-	if cbData.Hash != rtkGlobal.CBData[ipAddr].Hash {
-
+	targetCbData, _ := rtkUtils.GetNodeCBData(ipAddr)
+	if cbData.Hash != targetCbData.Hash {
 		if cbData.FmtType == rtkCommon.FILE || cbData.FmtType == rtkCommon.IMAGE {
-			if rtkGlobal.Handler.IpAddr != "" && ipAddr != rtkGlobal.Handler.IpAddr {
-				log.Println("specify the transmission peer is: ", rtkGlobal.Handler.IpAddr, " peer:", ipAddr, " continue")
+			if rtkGlobal.Handler.AppointIpAddr != "" && ipAddr != rtkGlobal.Handler.AppointIpAddr {
+				log.Println("specify the transmission peer is: ", rtkGlobal.Handler.AppointIpAddr, " peer:", ipAddr, " continue")
 				return
 			}
 		}
 
-		rtkGlobal.CBData[ipAddr] = cbData
+		rtkGlobal.CBData.Store(ipAddr, cbData)
 		rtkGlobal.Handler.SourceID = cbData.SourceID
 		rtkGlobal.Handler.SourceIP = rtkGlobal.NodeInfo.IPAddr.PublicIP
 		hash, err := rtkUtils.CreateMD5Hash(cbData.Content)
@@ -265,6 +262,7 @@ func HandleDataCopyProcess(s net.Conn, cbData rtkCommon.ClipBoardData, ipAddr st
 		if cbData.FmtType == rtkCommon.FILE {
 			msg.CopySize.SizeHigh = rtkGlobal.Handler.CopyDataSize.SizeHigh
 			msg.CopySize.SizeLow = rtkGlobal.Handler.CopyDataSize.SizeLow
+			msg.Buf = []byte(filepath.Base(string(cbData.Content)))
 		} else if cbData.FmtType == rtkCommon.IMAGE {
 			msg.CopySize.SizeHigh = rtkGlobal.Handler.CopyDataSize.SizeHigh
 			msg.CopySize.SizeLow = rtkGlobal.Handler.CopyDataSize.SizeLow
@@ -316,9 +314,9 @@ func P2PWrite(s net.Conn, ipAddr string, ctx context.Context) {
 
 func OpenDstFile() {
 	var err error
-	rtkGlobal.Handler.DstFile, err = os.OpenFile(rtkGlobal.Handler.DstFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND /*os.O_TRUNC*/, 0644)
+	rtkGlobal.Handler.DstFile, err = os.OpenFile(rtkGlobal.Handler.DstFilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		log.Println("Error opening file err: %v path: %v", err, rtkGlobal.Handler.DstFilePath)
+		log.Printf("Error opening Dst file err: %v path: %v", err, rtkGlobal.Handler.DstFilePath)
 	}
 }
 
@@ -374,19 +372,14 @@ func WriteToSocket(msg rtkCommon.P2PMessage, s net.Conn) rtkCommon.SocketErr {
 }
 
 func WriteDstFile(content []byte) {
-	// TODO: Only set in FILE type
-	/*
-	   if globalHandler.DstFile == nil {
-	       log.Println("Error opening dst file")
-	       return
-	   }
-	   if _, err := globalHandler.DstFile.Write(content); err != nil {
-	       log.Println("Error writing to file:", err)
-	       return
-	   }
-	*/
-	//log.Println("content:", content)
-	rtkPlatform.GoDataTransfer(content)
+	if rtkGlobal.Handler.DstFile != nil {
+		if _, err := rtkGlobal.Handler.DstFile.Write(content); err != nil {
+			log.Println("Error writing to dst file:", err)
+			return
+		}
+	} else {
+		rtkPlatform.GoDataTransfer(content)
+	}
 }
 
 func HandleDataTransferError(inbandCmd rtkCommon.P2PFileTransferInbandEnum) {
@@ -420,12 +413,14 @@ func IsTransferError(buffer []byte) bool {
 }
 
 func CloseDstFile() {
+	log.Println("CloseDstFile")
 	if rtkGlobal.Handler.DstFile == nil {
 		return
 	}
-
 	rtkGlobal.Handler.DstFile.Close()
 	rtkGlobal.Handler.DstFile = nil
+	rtkGlobal.Handler.DstFilePath = ""
+	rtkGlobal.Handler.FileName = ""
 }
 
 func HandleDataTransferWrite(s net.Conn, ipAddr string) bool {
@@ -437,12 +432,13 @@ func HandleDataTransferWrite(s net.Conn, ipAddr string) bool {
 	rtkGlobal.Handler.CtxMutex.Lock()
 	defer rtkGlobal.Handler.CtxMutex.Unlock()
 
+	targetCbData, _ := rtkUtils.GetNodeCBData(ipAddr)
 	var msg = rtkCommon.P2PMessage{
 		SourceID:  rtkGlobal.NodeInfo.ID,
 		InbandCmd: "",
 		Hash:      "",
 		PacketID:  0,
-		FmtType:   rtkGlobal.CBData[ipAddr].FmtType,
+		FmtType:   targetCbData.FmtType,
 	}
 
 	if rtkGlobal.Handler.State.State == rtkCommon.DEST_INIT {
@@ -457,11 +453,11 @@ func HandleDataTransferWrite(s net.Conn, ipAddr string) bool {
 		return true
 	} else if rtkGlobal.Handler.State.State == rtkCommon.PROCESSING_TRAN_ING_ACK {
 		log.Println("(DST) Start to Copy ...")
-		fileSize := int64(rtkGlobal.CBData[ipAddr].CopySize.SizeHigh)<<32 | int64(rtkGlobal.CBData[ipAddr].CopySize.SizeLow)
+		fileSize := int64(rtkGlobal.Handler.CopyDataSize.SizeHigh)<<32 | int64(rtkGlobal.Handler.CopyDataSize.SizeLow)
 		log.Printf("Copy total size:%d", fileSize)
 		receivedBytes := int64(0)
 		buffer := make([]byte, 32*1024)
-		rtkGlobal.AndriodDataTransfer = []byte{}
+
 		// TODO: read data timeout
 		// s.SetReadDeadline(time.Now().Add(10 * time.Second))
 		for receivedBytes < fileSize {
@@ -496,12 +492,20 @@ func HandleDataTransferWrite(s net.Conn, ipAddr string) bool {
 		}
 		// s.SetReadDeadline(time.Time{})
 		log.Println("(DST) End to Copy ...")
-		log.Printf("(DST) Copy total android len:[%d]", len(rtkGlobal.AndriodDataTransfer))
+		rtkPlatform.ReceiveCopyDataDone(msg.FmtType, fileSize)
 		if msg.FmtType == rtkCommon.FILE {
 			CloseDstFile()
 		}
 		rtkGlobal.Handler.State.State = rtkCommon.UNINIT
-		rtkGlobal.Handler.IpAddr = ""
+		return true
+	} else if rtkGlobal.Handler.State.State == rtkCommon.FILE_DROP_INIT {
+		log.Println("(SRC) Init file-drop ...")
+		rtkGlobal.Handler.State.State = rtkCommon.UNINIT
+		msg.InbandCmd = rtkCommon.FILE_DROP_INITIATE
+		msg.CopySize.SizeHigh = rtkGlobal.Handler.CopyDataSize.SizeHigh
+		msg.CopySize.SizeLow = rtkGlobal.Handler.CopyDataSize.SizeLow
+		msg.Buf = []byte(filepath.Base(rtkGlobal.Handler.CopyFilePath.Load().(string)))
+		WriteToSocket(msg, s)
 		return true
 	}
 

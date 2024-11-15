@@ -26,8 +26,9 @@ import (
 )
 
 const (
-	hostID = "/storage/emulated/0/Android/data/com.rtk.myapplication/files/ID.HostID"
-	nodeID = "/storage/emulated/0/Android/data/com.rtk.myapplication/files/ID.ID"
+	hostID      = "/storage/emulated/0/Android/data/com.rtk.myapplication/files/ID.HostID"
+	nodeID      = "/storage/emulated/0/Android/data/com.rtk.myapplication/files/ID.ID"
+	receiveFile = "/storage/emulated/0/Android/data/com.rtk.myapplication/files/"
 )
 
 type ClipBoardTextData struct {
@@ -40,12 +41,16 @@ var CBTextData = ClipBoardTextData{
 	CurInputText:  "",
 }
 
+var ImageData []byte
+
 type Callback interface {
 	CallbackMethod(result string)
 	CallbackMethodImage(content string)
 	LogMessageCallback(msg string)
 	EventCallback(event int)
 	CallbackMethodFileConfirm(platform string, fileSize int64)
+	CallbackMethodFileDone(name string, fileSize int64)
+	CallbackMethodFoundPeer()
 }
 
 var CallbackInstance Callback = nil
@@ -112,15 +117,11 @@ func WatchAndroidClipboardText(s net.Conn) {
 }
 
 func SendMessage(s string) {
-	log.Println("android SendMessage: ", s)
-	CBTextData.CurInputText = s
-}
-
-func SendFileTransCmdCallback(cmd rtkCommon.FileTransferCmd) {
-	switch cmd {
-	case rtkCommon.FILE_TRANS_REQUEST:
-		CallbackInstance.CallbackMethod("FILE_TRANS_REQUEST")
+	log.Printf("android SendMessage:[%s] ", s)
+	if s == "" || len(s) == 0 {
+		return
 	}
+	CBTextData.CurInputText = s
 }
 
 func SetupCallbackSettings() {
@@ -132,42 +133,59 @@ func GoClipboardPasteFileCallback(content string) {
 }
 
 func GoSetupDstPasteFile(desc string, fileName string, fileSizeHigh uint32, fileSizeLow uint32) {
-
+	log.Printf("GoSetupDstPasteFile  sourceID：%s fileName:[%s] [%d][%d]", desc, fileName, fileSizeHigh, fileSizeLow)
 }
 
-func ReceiveFileConfirm(fileSize int64) {
-
-	log.Println("ReceiveFileConfirm:", fileSize)
+func GoSetupFileDrop(desc string, fileName string, fileSizeHigh uint32, fileSizeLow uint32) {
+	fileSize := int64(fileSizeHigh)<<32 | int64(fileSizeLow)
+	log.Printf("GoSetupFileDrop  source:%s name:%s  fileSize:%d", desc, fileName, fileSize)
+	rtkGlobal.Handler.FileName = fileName
 	CallbackInstance.CallbackMethodFileConfirm("android", fileSize)
 }
 
-func GoSetupDstPasteImage(desc string, content []byte, imgHeader rtkCommon.ImgHeader, dataSize uint32) {
-	log.Printf("android GoSetupDstPasteImage from ID %s, len:[%d] CopySize.SizeLow:[%d]\n\n", desc, len(content), dataSize /*, string(content)*/)
-	//clipboard.Write(clipboard.FmtImage, content)
+func ReceiveCopyDataDone(fileType rtkCommon.ClipboardFmtType, fileSize int64) {
+	log.Printf("ReceiveFileDone: %s  size:%d", fileType, fileSize)
+	if CallbackInstance == nil {
+		log.Println(" CallbackInstance is null !")
+		return
+	}
 
-	/*if CallbackInstance != nil {
+	if fileType == rtkCommon.FILE {
+		CallbackInstance.CallbackMethodFileDone(rtkGlobal.Handler.DstFilePath, fileSize)
+	} else if fileType == rtkCommon.IMAGE {
 		go func() {
-			CallbackInstance.CallbackMethodImage(string(content))
-			log.Println("android GoSetupDstPasteImage - CallbackMethod - done")
+
+			imageBase64 := rtkUtils.Base64Encode(rtkUtils.BitmapToImage(ImageData, int(rtkGlobal.Handler.CopyImgHeader.Width), int(rtkGlobal.Handler.CopyImgHeader.Height)))
+
+			//log.Printf("len[%d][%d][%d][%+v]", len(ImageData), len(imageBase64), rtkGlobal.Handler.CopyImgHeader.Width, imageBase64)
+			CallbackInstance.CallbackMethodImage(imageBase64)
 		}()
-	} else {
-		log.Println("android GoSetupDstPasteImage - failed - callbackInstance is nil")
-	}*/
+	}
+}
+
+func FoundPeer() {
+	log.Println("android CallbackMethodFoundPeer")
+	CallbackInstance.CallbackMethodFoundPeer()
+}
+
+func GoSetupDstPasteImage(desc string, content []byte, imgHeader rtkCommon.ImgHeader, dataSize uint32) {
+	log.Printf("android GoSetupDstPasteImage from ID %s, len:[%d] CopySize.SizeLow:[%d]\n\n", desc, len(content), dataSize)
+
+	rtkGlobal.Handler.CopyImgHeader.Height = imgHeader.Height
+	rtkGlobal.Handler.CopyImgHeader.Width = imgHeader.Width
+	rtkGlobal.Handler.CopyImgHeader.BitCount = imgHeader.BitCount
+	rtkGlobal.Handler.CopyImgHeader.Planes = imgHeader.Planes
+	rtkGlobal.Handler.CopyImgHeader.Compression = imgHeader.Compression
+	rtkGlobal.Handler.CtxMutex.Lock()
+	defer rtkGlobal.Handler.CtxMutex.Unlock()
+	rtkGlobal.Handler.State.State = rtkCommon.DEST_INIT
+	ImageData = []byte{}
+
 }
 
 func GoDataTransfer(data []byte) {
-	log.Printf("andriod Get Data transfer:%d", len(data))
-	rtkGlobal.AndriodDataTransfer = append(rtkGlobal.AndriodDataTransfer, data...)
-
-	if rtkGlobal.Handler.DstFile != nil {
-		n, err := rtkGlobal.Handler.DstFile.Write(data)
-		if err != nil {
-			log.Printf(".Handler.DstFile.Write err:%+v", err)
-		}
-		log.Printf("andriod Get Data DstFile.Write:%d size success!", n)
-	} else {
-		log.Printf(".Handler.DstFile is not open! ")
-	}
+	log.Println("GoDataTransfer len:", len(data))
+	ImageData = append(ImageData, data...)
 
 }
 
@@ -178,8 +196,6 @@ func GoEventHandle(eventType int) {
 func GoSetupDstPasteText(content []byte) {
 	log.Printf("android GoSetupDstPasteText:%s \n\n", string(content))
 	PerformTextTask(string(content))
-
-	//clipboard.Write(clipboard.FmtText, content)  测试好像不行
 }
 
 func GenKey() crypto.PrivKey {
@@ -215,4 +231,8 @@ func GetIDPath() string {
 
 func GetHostIDPath() string {
 	return hostID
+}
+
+func GetReceiveFilePath() string {
+	return receiveFile
 }

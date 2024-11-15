@@ -37,15 +37,15 @@ const (
 type P2PHandler struct {
 	CtxMutex sync.Mutex
 	State    P2PFileTransferState
-	// a user-defined file path
+	// a user-select file path
 	DstFilePath string
-	// a handler of user-define file path
+	// a handler of user-select file path
 	DstFile *os.File
 	// require a file from a remote i.e. last copy file
 	SrcFile *os.File
 
 	//the peer to specify the transmission
-	IpAddr string
+	AppointIpAddr string
 	// record the last copy "file" info
 	CopyFilePath atomic.Value
 	// record the last copy "image" info
@@ -53,6 +53,8 @@ type P2PHandler struct {
 	CopyImgData   []byte
 	// record the last copy "common" info
 	CopyDataSize FileSize
+	//file name
+	FileName string
 	// record the last updater from a remote
 	SourceID string
 	SourceIP string
@@ -61,7 +63,7 @@ type P2PHandler struct {
 type P2PFileTransferStateEnum string
 
 const (
-	FILE_TRANS_INIT         P2PFileTransferStateEnum = "FILE_TRANS_INIT" // FileTransferCmd only
+	FILE_DROP_INIT          P2PFileTransferStateEnum = "FILE_DROP_INIT" // FileDropCmd only
 	SRC_INIT                P2PFileTransferStateEnum = "SRC_INIT"
 	DEST_INIT               P2PFileTransferStateEnum = "DEST_INIT"
 	PROCESSING_TRAN_ING     P2PFileTransferStateEnum = "PROCESSING_TRAN_ING"
@@ -76,7 +78,7 @@ type P2PFileTransferState struct {
 type P2PFileTransferInbandEnum string
 
 const (
-	FILE_TRANS_INITIATE  P2PFileTransferInbandEnum = "FILE_TRANS_INITIATE" // FileTransferCmd only
+	FILE_DROP_INITIATE   P2PFileTransferInbandEnum = "FILE_DROP_INITIATE" // FileDropCmd only
 	FILE_REQ             P2PFileTransferInbandEnum = "FILE_REQ"
 	FILE_REQ_ACK         P2PFileTransferInbandEnum = "FILE_REQ_ACK"
 	FILE_REQ_DONE        P2PFileTransferInbandEnum = "FILE_REQ_DONE"
@@ -85,13 +87,12 @@ const (
 	TEXT_TRAN            P2PFileTransferInbandEnum = "TEXT_TRAN"
 )
 
-type FileTransferCmd string
+type FileDropCmd string
 
 const (
-	FILE_TRANS_REQUEST    FileTransferCmd = "FILE_TRANS_REQUEST"
-	FILE_TRANS_ACCEPT     FileTransferCmd = "FILE_TRANS_ACCEPT"
-	FILE_TRANS_CANCEL     FileTransferCmd = "FILE_TRANS_CANCEL"
-	FILE_TRANS_SETUP_PATH FileTransferCmd = "FILE_TRANS_SETUP_PATH"
+	FILE_DROP_REQUEST FileDropCmd = "FILE_DROP_REQUEST"
+	FILE_DROP_ACCEPT  FileDropCmd = "FILE_DROP_ACCEPT"
+	FILE_DROP_CANCEL  FileDropCmd = "FILE_DROP_CANCEL"
 )
 
 type ClipboardFmtType string
@@ -124,6 +125,11 @@ type ClipBoardData struct {
 type FileSize struct {
 	SizeHigh uint32
 	SizeLow  uint32
+}
+
+type FileInfo struct {
+	FileSize_ FileSize
+	FilePath  string
 }
 
 type ImgHeader struct {

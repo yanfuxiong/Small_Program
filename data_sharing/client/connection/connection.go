@@ -129,12 +129,12 @@ func ExecuteP2PConnect(ctx context.Context, stream network.Stream, node host.Hos
 	connP2P := performDCUtRHandshake(stream)
 	if connP2P != nil {
 		ipAddr := connP2P.RemoteAddr().String()
-		rtkGlobal.CBData[ipAddr] = rtkCommon.ClipBoardData{
+		rtkGlobal.CBData.Store(ipAddr, rtkCommon.ClipBoardData{
 			SourceID: "",
 			Hash:     "",
 			FmtType:  rtkCommon.TEXT,
 			Content:  []byte{},
-		}
+		})
 
 		connCtx, cancel := context.WithCancel(context.Background())
 		go rtkP2P.P2PRead(connP2P, ipAddr, connCtx, cancel)
@@ -195,12 +195,12 @@ func HandleStream(s network.Stream) {
 		}
 
 		ipAddr := connP2P.RemoteAddr().String()
-		rtkGlobal.CBData[ipAddr] = rtkCommon.ClipBoardData{
+		rtkGlobal.CBData.Store(ipAddr, rtkCommon.ClipBoardData{
 			SourceID: "",
 			Hash:     "",
 			FmtType:  rtkCommon.TEXT,
 			Content:  []byte{},
-		}
+		})
 
 		connCtx, cancel := context.WithCancel(context.Background())
 		go rtkP2P.P2PRead(connP2P, ipAddr, connCtx, cancel)

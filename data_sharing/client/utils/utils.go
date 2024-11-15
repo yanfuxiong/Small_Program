@@ -2,12 +2,15 @@ package utils
 
 import (
 	"crypto/md5"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"log"
 	"os"
+	rtkCommon "rtk-cross-share/common"
+	rtkGlobal "rtk-cross-share/global"
 	"strings"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -158,12 +161,12 @@ func GetLocalPort(Addrs []ma.Multiaddr) string {
 func ExtractTCPIPandPort(maddr ma.Multiaddr) (string, string) {
 	ip, err := maddr.ValueForProtocol(ma.P_IP4)
 	if err != nil {
-		log.Println("Failed to get IP: %v", err)
+		log.Printf("Failed to get IP: %v", err)
 	}
 
 	port, err := maddr.ValueForProtocol(ma.P_TCP)
 	if err != nil {
-		log.Println("Failed to get port: %v", err)
+		log.Printf("Failed to get port: %v", err)
 	}
 	return ip, port
 }
@@ -193,10 +196,52 @@ func IsInPeerList(peerID string, list []peer.AddrInfo) bool {
 	return false
 }
 
+func LostsMdnsPeerList(peerID string, list []peer.AddrInfo) []peer.AddrInfo {
+	i := 0
+	for _, item := range list {
+		if !strings.EqualFold(item.ID.String(), peerID) {
+			list[i] = item
+			i++
+		}
+	}
+	return list[:i]
+}
+
 func DistinctMdnsID(slice []string, list []peer.AddrInfo) []string {
 
 	for _, peer := range list {
 		slice = RemoveMySelfID(slice, peer.ID.String())
 	}
 	return slice
+}
+
+func GetNodeCBData(ipAddr string) (rtkCommon.ClipBoardData, bool) {
+	val, ok := rtkGlobal.CBData.Load(ipAddr)
+	if !ok {
+		log.Printf("Key:[%s] is not found", ipAddr)
+		return rtkCommon.ClipBoardData{}, ok
+	}
+
+	if cbData, ok := val.(rtkCommon.ClipBoardData); ok {
+		return cbData, ok
+	}
+
+	log.Printf("Key:[%+v] is not rtkCommon.ClipBoardData", val)
+	return rtkCommon.ClipBoardData{}, false
+}
+
+// 解码
+func Base64Decode(src string) []byte {
+	bytes, err := base64.StdEncoding.DecodeString(src)
+	if err != nil {
+		log.Printf("Base64Decode error:[%+v] [%s]", err, src)
+		return nil
+	}
+
+	return bytes
+}
+
+// 编码
+func Base64Encode(src []byte) string {
+	return base64.StdEncoding.EncodeToString(src)
 }

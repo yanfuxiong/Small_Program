@@ -5,6 +5,7 @@
 #include <iostream>
 #include <mutex>
 #include "MSPaste/MSPasteImpl.h"
+#include "MSPaste/MSFileDrop.h"
 
 HINSTANCE g_hInst;
 HWND g_hWnd;
@@ -14,6 +15,7 @@ HANDLE g_thread = NULL;
 bool g_isOleClipboardOperation = false;
 std::mutex clipboardMutex;
 MSPasteImpl *msPasteImpl = NULL;
+MSFileDrop *msFileDrop = NULL;
 
 typedef void (*ClipboardCopyFileCallback)(wchar_t*, unsigned long, unsigned long);
 ClipboardCopyFileCallback g_cpFilecallback = nullptr;
@@ -21,6 +23,8 @@ typedef void (*ClipboardPasteFileCallback)(char*);
 ClipboardPasteFileCallback g_pscallback = nullptr;
 typedef void (*ClipboardCopyImgCallback)(IMAGE_HEADER, unsigned char*, unsigned long);
 ClipboardCopyImgCallback g_cpImgCallback = nullptr;
+typedef void (*FileDropCmdCallback)(unsigned long, wchar_t*);
+FileDropCmdCallback g_fdCmdCallback = nullptr;
 
 void GetFileSizeW(wchar_t filePath[MAX_PATH], unsigned long& fileSizeHigh, unsigned long& fileSizeLow)
 {
@@ -194,6 +198,10 @@ extern "C" __declspec(dllexport) void SetClipboardPasteFileCallback(ClipboardPas
     g_pscallback = callback;
 }
 
+extern "C" __declspec(dllexport) void SetFileDropCmdCallback(FileDropCmdCallback callback) {
+    g_fdCmdCallback = callback;
+}
+
 extern "C" __declspec(dllexport) void SetClipboardCopyImgCallback(ClipboardCopyImgCallback callback) {
     g_cpImgCallback = callback;
 }
@@ -249,6 +257,22 @@ extern "C" __declspec(dllexport) void SetupDstPasteImage(wchar_t* desc,
     msPasteImpl = new MSPasteImpl(g_pscallback);
     IMAGE_INFO imgInfo = {desc, imgHeader, dataSize};
     msPasteImpl->SetupPasteImage(imgInfo, clipboardMutex, g_isOleClipboardOperation);
+}
+
+extern "C" __declspec(dllexport) void SetupFileDrop(wchar_t* desc,
+                                                        wchar_t* fileName,
+                                                        unsigned long fileSizeHigh,
+                                                        unsigned long fileSizeLow) {
+    if (msFileDrop) {
+        delete msFileDrop;
+        msFileDrop = NULL;
+    }
+
+    msFileDrop = new MSFileDrop(g_fdCmdCallback);
+    FILE_INFO fileInfo = {std::wstring(desc), std::wstring(fileName), fileSizeHigh, fileSizeLow};
+    std::vector<FILE_INFO> fileList;
+    fileList.push_back(fileInfo);
+    msFileDrop->SetupDropFilePath(fileList);
 }
 
 extern "C" __declspec(dllexport) void DataTransfer(unsigned char* data, unsigned int size) {

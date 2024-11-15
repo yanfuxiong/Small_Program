@@ -27,7 +27,6 @@ func ResetOthersClipboard(fmtType rtkCommon.ClipboardFmtType) {
 	}
 	resetFile := func() {
 		rtkGlobal.Handler.CopyFilePath.Store("")
-		rtkGlobal.Handler.IpAddr = ""
 	}
 	resetDataSize := func() {
 		rtkGlobal.Handler.CopyDataSize = rtkCommon.FileSize{
@@ -99,7 +98,7 @@ func WatchClipboardImg(resultChan chan<- rtkCommon.ClipBoardData) {
 		case <-time.After(100 * time.Millisecond):
 			currentHeader := rtkCommon.ImgHeader(rtkGlobal.Handler.CopyImgHeader)
 			currentContent := []byte(rtkGlobal.Handler.CopyImgData)
-			if !imgHeaderEqual(lastHeader, currentHeader) || !rtkUtils.ContentEqual(lastContent, currentContent) {
+			if !imgHeaderEqual(lastHeader, currentHeader) && !rtkUtils.ContentEqual(lastContent, currentContent) {
 				if !imgHeaderEqual(currentHeader, rtkCommon.ImgHeader{}) {
 					ResetOthersClipboard(rtkCommon.IMAGE)
 				}
@@ -111,7 +110,7 @@ func WatchClipboardImg(resultChan chan<- rtkCommon.ClipBoardData) {
 				lastContent = currentContent
 
 				if !isEmptyImgHeader(currentHeader) {
-					log.Printf("WatchClipboardImg - got new Image  Wight:%d Height:%d, content len:[%d] \n\n", currentHeader.Width, currentHeader.Height, len(currentContent) /*, string(currentContent)*/)
+					log.Printf("WatchClipboardImg - got new Image  Wight:%d Height:%d, content len:[%d] \n\n", currentHeader.Width, currentHeader.Height, len(currentContent))
 					resultChan <- rtkCommon.ClipBoardData{
 						SourceID: rtkGlobal.NodeInfo.ID,
 						FmtType:  rtkCommon.IMAGE,

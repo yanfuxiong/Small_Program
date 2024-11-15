@@ -4,7 +4,6 @@ import (
 	"fmt"
 	rtkBuildConfig "rtk-cross-share/buildConfig"
 	rtkCmd "rtk-cross-share/cmd"
-	rtkMdns "rtk-cross-share/mdns"
 )
 
 func main() {
@@ -13,6 +12,5 @@ func main() {
 	fmt.Println("Build Date: ", rtkBuildConfig.BuildDate)
 	fmt.Printf("========================\n\n")
 
-	rtkMdns.MdnsCfg = rtkMdns.ParseFlags()
 	rtkCmd.Run()
 }

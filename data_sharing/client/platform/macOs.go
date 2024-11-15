@@ -70,10 +70,6 @@ func WatchClipboardText(ctx context.Context, resultChan chan<- rtkCommon.ClipBoa
 	}
 }
 
-func SendFileTransCmdCallback(cmd rtkCommon.FileTransferCmd) {
-
-}
-
 func SetupCallbackSettings() {
 
 }
@@ -83,6 +79,10 @@ func GoClipboardPasteFileCallback(content string) {
 }
 
 func GoSetupDstPasteFile(desc string, fileName string, fileSizeHigh uint32, fileSizeLow uint32) {
+
+}
+
+func GoSetupFileDrop(desc string, fileName string, fileSizeHigh uint32, fileSizeLow uint32) {
 
 }
 

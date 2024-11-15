@@ -38,6 +38,7 @@ struct IMAGE_INFO
 };
 
 typedef void (*ClipboardPasteFileCallback)(char*);
+typedef void (*FileDropCmdCallback)(unsigned long, wchar_t*);
 
 class IStreamObserver {
 public:

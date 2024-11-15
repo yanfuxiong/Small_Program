@@ -7,6 +7,7 @@ import (
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/multiformats/go-multiaddr"
 	"golang.design/x/clipboard"
 	"gopkg.in/natefinch/lumberjack.v2"
 	"log"
@@ -59,12 +60,14 @@ func SetupLogFileSetting() {
 	})
 }
 
+var sourceAddrStr string
+
 func listen_addrs(port int) []string {
 	addrs := []string{
 		"/ip4/0.0.0.0/tcp/%d",
 		"/ip4/0.0.0.0/udp/%d/quic",
-		"/ip6/::/tcp/%d",
-		"/ip6/::/udp/%d/quic",
+		//"/ip6/::/tcp/%d",
+		//"/ip6/::/udp/%d/quic",
 	}
 
 	for i, a := range addrs {
@@ -78,11 +81,13 @@ func SetupNode() host.Host {
 	priv := rtkPlatform.GenKey()
 
 	if rtkMdns.MdnsCfg.ListenPort <= 0 {
-		log.Fatal("listen port is not set")
+		log.Println("(MDNS) listen port is not set. Use a random port")
 	}
 
+	sourceMultiAddr, _ := multiaddr.NewMultiaddr(sourceAddrStr)
 	node, err := libp2p.New(
-		libp2p.ListenAddrStrings(listen_addrs(rtkMdns.MdnsCfg.ListenPort)...),
+		//libp2p.ListenAddrStrings(listen_addrs(rtkMdns.MdnsCfg.ListenPort)...),	安卓14新平板会报错，这里取的Addrs()最后一位为0，所以改为andriod传进来
+		libp2p.ListenAddrs(sourceMultiAddr),
 		libp2p.NATPortMap(),
 		libp2p.Identity(priv),
 		libp2p.ForceReachabilityPrivate(),
@@ -95,7 +100,7 @@ func SetupNode() host.Host {
 		return nil
 	}
 
-	node.Network().Listen(node.Addrs()[0]) //mdns包此处需要指定listen地址，否则报错
+	node.Network().Listen(node.Addrs()[0])
 
 	log.Println("Self ID: ", node.ID().String())
 	log.Println("Self node Addr: ", node.Addrs())
@@ -117,9 +122,11 @@ func SetupNode() host.Host {
 	return node
 }
 func Run() {
+	rtkMdns.MdnsCfg = rtkMdns.ParseFlags()
 	SetupSettings()
 	//SetupLogFileSetting()
 
+	sourceAddrStr = fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", rtkMdns.MdnsCfg.ListenPort)
 	ctx := context.Background()
 	node := SetupNode()
 
@@ -145,7 +152,7 @@ func Run() {
 	select {}
 }
 
-func MainInit(cb rtkPlatform.Callback, serverId string, serverIpInfo string, listentPort int) {
+func MainInit(cb rtkPlatform.Callback, serverId, serverIpInfo, listenHost string, listentPort int) {
 	log.Println("========================")
 	log.Println("Version: ", rtkBuildConfig.Version)
 	log.Println("Build Date: ", rtkBuildConfig.BuildDate)
@@ -158,10 +165,11 @@ func MainInit(cb rtkPlatform.Callback, serverId string, serverIpInfo string, lis
 		rtkGlobal.RelayServerID = serverId
 		rtkGlobal.RelayServerIPInfo = serverIpInfo
 		rtkMdns.MdnsCfg.ListenPort = listentPort
-
+		rtkMdns.MdnsCfg.ListenHost = listenHost
 		log.Printf("set relayServerID: %s", serverId)
 		log.Printf("set relayServerIPInfo: %s", serverIpInfo)
-		log.Printf("set mdns listen port: %d\n", listentPort)
+		log.Printf("(MDNS) set host[%s] listen port: %d\n", listenHost, listentPort)
+		sourceAddrStr = fmt.Sprintf("/ip4/%s/tcp/%d", rtkMdns.MdnsCfg.ListenHost, rtkMdns.MdnsCfg.ListenPort)
 	}
 
 	SetupSettings()
@@ -192,26 +200,4 @@ func MainInit(cb rtkPlatform.Callback, serverId string, serverIpInfo string, lis
 
 	go rtkDebug.DebugCmdLine()
 	select {}
-}
-
-func SendFileTransCmd(cmd rtkCommon.FileTransferCmd, data interface{}) {
-	switch cmd {
-	case rtkCommon.FILE_TRANS_REQUEST:
-		rtkGlobal.Handler.CtxMutex.Lock()
-		defer rtkGlobal.Handler.CtxMutex.Unlock()
-		rtkGlobal.Handler.State.State = rtkCommon.FILE_TRANS_INIT
-	case rtkCommon.FILE_TRANS_ACCEPT:
-		rtkGlobal.Handler.CtxMutex.Lock()
-		defer rtkGlobal.Handler.CtxMutex.Unlock()
-		rtkGlobal.Handler.State.State = rtkCommon.DEST_INIT
-	case rtkCommon.FILE_TRANS_CANCEL:
-		// Do nothing
-	case rtkCommon.FILE_TRANS_SETUP_PATH:
-		rtkGlobal.Handler.CtxMutex.Lock()
-		defer rtkGlobal.Handler.CtxMutex.Unlock()
-		s, ok := data.(string)
-		if ok {
-			rtkGlobal.Handler.DstFilePath = s
-		}
-	}
 }
