@@ -1,21 +1,22 @@
 // g++ -shared -o clipboard.dll clipboard/clipboard.cpp -lgdi32
-#include <windows.h>
 #include <string>
 #include <atomic>
 #include <iostream>
 #include <mutex>
 #include "MSPaste/MSPasteImpl.h"
 #include "MSPaste/MSFileDrop.h"
+#include "MSPipeServer/MSPipeController.h"
 
-HINSTANCE g_hInst;
-HWND g_hWnd;
+HWND g_hWnd = NULL;
 std::atomic<bool> g_running;
+std::atomic<bool> g_running_pipe;
 HANDLE g_event;
 HANDLE g_thread = NULL;
 bool g_isOleClipboardOperation = false;
 std::mutex clipboardMutex;
 MSPasteImpl *msPasteImpl = NULL;
 MSFileDrop *msFileDrop = NULL;
+MSPipeController *msPipeCtrl = NULL;
 
 typedef void (*ClipboardCopyFileCallback)(wchar_t*, unsigned long, unsigned long);
 ClipboardCopyFileCallback g_cpFilecallback = nullptr;
@@ -23,8 +24,10 @@ typedef void (*ClipboardPasteFileCallback)(char*);
 ClipboardPasteFileCallback g_pscallback = nullptr;
 typedef void (*ClipboardCopyImgCallback)(IMAGE_HEADER, unsigned char*, unsigned long);
 ClipboardCopyImgCallback g_cpImgCallback = nullptr;
-typedef void (*FileDropCmdCallback)(unsigned long, wchar_t*);
-FileDropCmdCallback g_fdCmdCallback = nullptr;
+typedef void (*FileDropRequestCallback)(char*, char*, unsigned long long, unsigned long long, wchar_t*);
+FileDropRequestCallback g_fdReqCallback = nullptr;
+typedef void (*FileDropResponseCallback)(unsigned long, wchar_t*);
+FileDropResponseCallback g_fdRespCallback = nullptr;
 
 void GetFileSizeW(wchar_t filePath[MAX_PATH], unsigned long& fileSizeHigh, unsigned long& fileSizeLow)
 {
@@ -198,8 +201,12 @@ extern "C" __declspec(dllexport) void SetClipboardPasteFileCallback(ClipboardPas
     g_pscallback = callback;
 }
 
-extern "C" __declspec(dllexport) void SetFileDropCmdCallback(FileDropCmdCallback callback) {
-    g_fdCmdCallback = callback;
+extern "C" __declspec(dllexport) void SetFileDropRequestCallback(FileDropRequestCallback callback) {
+    g_fdReqCallback = callback;
+}
+
+extern "C" __declspec(dllexport) void SetFileDropResponseCallback(FileDropResponseCallback callback) {
+    g_fdRespCallback = callback;
 }
 
 extern "C" __declspec(dllexport) void SetClipboardCopyImgCallback(ClipboardCopyImgCallback callback) {
@@ -268,11 +275,13 @@ extern "C" __declspec(dllexport) void SetupFileDrop(wchar_t* desc,
         msFileDrop = NULL;
     }
 
-    msFileDrop = new MSFileDrop(g_fdCmdCallback);
+    // TODO: remove callback. only update progress
+    msFileDrop = new MSFileDrop(g_fdRespCallback);
     FILE_INFO fileInfo = {std::wstring(desc), std::wstring(fileName), fileSizeHigh, fileSizeLow};
     std::vector<FILE_INFO> fileList;
     fileList.push_back(fileInfo);
     msFileDrop->SetupDropFilePath(fileList);
+    // TODO: send to client
 }
 
 extern "C" __declspec(dllexport) void DataTransfer(unsigned char* data, unsigned int size) {
@@ -281,6 +290,22 @@ extern "C" __declspec(dllexport) void DataTransfer(unsigned char* data, unsigned
     }
 
     msPasteImpl->WriteFile(data, size);
+}
+
+extern "C" __declspec(dllexport) void UpdateProgressBar(unsigned int size) {
+    if (!msFileDrop) {
+        return;
+    }
+
+    msFileDrop->UpdateProgressBar(size);
+}
+
+extern "C" __declspec(dllexport) void DeinitProgressBar() {
+    if (!msFileDrop) {
+        return;
+    }
+
+    msFileDrop->DeinitProgressBar();
 }
 
 extern "C" __declspec(dllexport) void EventHandle(EVENT_TYPE event) {
@@ -295,6 +320,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
     switch (ul_reason_for_call) {
     case DLL_PROCESS_ATTACH:
         g_running = false;
+        g_running_pipe = false;
         DisableThreadLibraryCalls(hModule);
         break;
     case DLL_PROCESS_DETACH:
@@ -302,4 +328,35 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         break;
     }
     return TRUE;
+}
+
+extern "C" __declspec(dllexport) void StartPipeMonitor() {
+    if (g_running_pipe.exchange(true)) {
+        return;
+    }
+
+    if (msPipeCtrl) {
+        delete msPipeCtrl;
+        msPipeCtrl = NULL;
+    }
+    msPipeCtrl = new MSPipeController(g_running_pipe, g_fdReqCallback);
+}
+
+extern "C" __declspec(dllexport) void StopPipeMonitor() {
+    if (!g_running_pipe.exchange(false)) {
+        return;
+    }
+
+    if (msPipeCtrl) {
+        delete msPipeCtrl;
+        msPipeCtrl = NULL;
+    }
+}
+
+extern "C" __declspec(dllexport) void UpdateClientStatus(unsigned int status, char* ip, char* id, wchar_t* name) {
+    if (!msPipeCtrl) {
+        return;
+    }
+
+    msPipeCtrl->UpdateClientStatus(status, ip, id, name);
 }

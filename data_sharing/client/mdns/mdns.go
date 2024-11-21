@@ -12,7 +12,6 @@ import (
 	rtkConnection "rtk-cross-share/connection"
 	rtkGlobal "rtk-cross-share/global"
 	rtkPlatform "rtk-cross-share/platform"
-	rtkUtils "rtk-cross-share/utils"
 )
 
 type discoveryNotifee struct {
@@ -68,12 +67,8 @@ func BuildMdnsTalker(ctx context.Context, node host.Host) {
 				continue
 			}
 
-			if !rtkUtils.IsInPeerList(peer.ID.String(), rtkGlobal.MdnsPeerList) {
-				rtkGlobal.MdnsPeerList = append(rtkGlobal.MdnsPeerList, peer)
-				rtkPlatform.FoundPeer()
-			}
 			rtkConnection.ExecuteDirectConnect(ctx, stream)
-			log.Println("BuildMdnsTalker Connected to:", peer, " success!")
+			log.Println("BuildMdnsTalker Connected to:", peer.ID.String(), " success!")
 		}
 	}()
 

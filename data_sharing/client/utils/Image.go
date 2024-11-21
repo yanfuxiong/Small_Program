@@ -30,7 +30,6 @@ func rotateImage(img image.Image) *image.RGBA {
 
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
-			// 计算旋转后的位置
 			nx := width - 1 - x
 			ny := height - 1 - y
 			newImg.Set(nx, ny, img.At(x, y))
@@ -54,7 +53,7 @@ func BitmapToImage(bitmapData []byte, w, h int) []byte {
 			img.Pix[4*(x+y*w)+2] = bitmapData[i]   //r
 			img.Pix[4*(x+y*w)+3] = 255             //A*/
 
-			offset := 4 * ((w - 1 - x) + y*w) //镜像转换
+			offset := 4 * ((w - 1 - x) + y*w)
 			img.Pix[offset] = bitmapData[i+2]
 			img.Pix[offset+1] = bitmapData[i+1]
 			img.Pix[offset+2] = bitmapData[i]
@@ -62,10 +61,9 @@ func BitmapToImage(bitmapData []byte, w, h int) []byte {
 		}
 	}
 
-	newImage := rotateImage(img) //旋转180度
+	newImage := rotateImage(img)
 
 	var buffer bytes.Buffer
-	// 将 image.Image 对象编码为 PNG 格式的字节切片并写入 buffer
 	err := png.Encode(&buffer, newImage)
 	if err != nil {
 		log.Println(err)
@@ -94,7 +92,7 @@ func GetByteImageInfo(data []byte) (wight, height, size int) {
 func ImageToBitmap(imgData []byte) []byte {
 	img, err := png.Decode(bytes.NewReader(imgData))
 	if err != nil {
-		log.Println(err)
+		//log.Println(err)
 		img, err = jpeg.Decode(bytes.NewReader(imgData))
 		if err != nil {
 			log.Println("jpeg err:", err)
@@ -102,7 +100,7 @@ func ImageToBitmap(imgData []byte) []byte {
 		}
 	}
 
-	rgba := mirrorHorizontal(rotateImage(img)) //旋转180  镜像转换
+	rgba := mirrorHorizontal(rotateImage(img))
 
 	bitmapData := make([]byte, (rgba.Bounds().Dx())*(rgba.Bounds().Dy())*4)
 	for y := 0; y < int(rgba.Bounds().Dy()); y++ {

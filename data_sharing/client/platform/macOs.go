@@ -37,7 +37,7 @@ func SetCallback(cb Callback) {
 	CallbackInstance = cb
 }
 
-type CallbackFunc func(rtkCommon.ClipboardFmtType)
+type CallbackFunc func(rtkCommon.ClipboardResetType)
 
 var CallbackInstanceResetCB CallbackFunc = nil
 
@@ -53,7 +53,7 @@ func WatchClipboardText(ctx context.Context, resultChan chan<- rtkCommon.ClipBoa
 			return
 		case content := <-changed:
 			if CallbackInstanceResetCB != nil {
-				CallbackInstanceResetCB(rtkCommon.TEXT)
+				CallbackInstanceResetCB(rtkCommon.CLIPBOARD_RESET_TYPE_TEXT)
 			}
 			hash, err := rtkUtils.CreateMD5Hash(content)
 			if err != nil {
@@ -94,12 +94,36 @@ func GoDataTransfer(data []byte) {
 
 }
 
+func GoUpdateProgressBar(size int) {
+
+}
+
+func GoDeinitProgressBar() {
+
+}
+
+func GoUpdateClientStatus(status uint32, ip string, id string, name string) {
+
+}
+
 func GoEventHandle(eventType int) {
 
 }
 
 func GoSetupDstPasteText(content []byte) {
 	clipboard.Write(clipboard.FmtText, content)
+}
+
+func ReceiveFileConfirm(fileSize int64) {
+
+}
+
+func ReceiveFileDone(fileType rtkCommon.ClipboardFmtType, fileSize int64) {
+
+}
+
+func FoundPeer() {
+
 }
 
 func GenKey() crypto.PrivKey {

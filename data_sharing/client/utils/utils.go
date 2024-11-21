@@ -5,8 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
-	"github.com/libp2p/go-libp2p/core/network"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"log"
 	"os"
 	rtkCommon "rtk-cross-share/common"
@@ -14,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/network"
 	ma "github.com/multiformats/go-multiaddr"
 	mh "github.com/multiformats/go-multihash"
 )
@@ -187,32 +186,59 @@ func RemoveMySelfID(slice []string, s string) []string {
 	return slice[:i]
 }
 
-func IsInPeerList(peerID string, list []peer.AddrInfo) bool {
-	for _, item := range list {
-		if strings.EqualFold(item.ID.String(), peerID) {
-			return true
-		}
+func ChangeIsFileDrop() {
+	for key, _ := range rtkGlobal.Handler.IsFileDropMap {
+		rtkGlobal.Handler.IsFileDropMap[key] = true
 	}
-	return false
 }
 
-func LostsMdnsPeerList(peerID string, list []peer.AddrInfo) []peer.AddrInfo {
+func InsertMdnsClientList(Id, IpAddr string) {
+	rtkGlobal.MdnsListRWMutex.Lock()
+	defer rtkGlobal.MdnsListRWMutex.Unlock()
+	isExist := false
+	for _, val := range rtkGlobal.MdnsClientList {
+		if strings.EqualFold(Id, val.ID) && strings.EqualFold(IpAddr, val.IpAddr) {
+			isExist = true
+		}
+	}
+	if !isExist {
+		rtkGlobal.MdnsClientList = append(rtkGlobal.MdnsClientList, rtkCommon.ClientInfo{ID: Id, IpAddr: IpAddr})
+		rtkGlobal.Handler.IsFileDropMap[IpAddr] = false
+	}
+}
+
+func LostMdnsClientList(peerID string) {
+	rtkGlobal.MdnsListRWMutex.Lock()
+	defer rtkGlobal.MdnsListRWMutex.Unlock()
 	i := 0
-	for _, item := range list {
-		if !strings.EqualFold(item.ID.String(), peerID) {
-			list[i] = item
+	var temList []rtkCommon.ClientInfo
+	for _, item := range rtkGlobal.MdnsClientList {
+		if !strings.EqualFold(item.ID, peerID) {
+			temList[i] = item
 			i++
 		}
 	}
-	return list[:i]
+	rtkGlobal.MdnsClientList = temList
 }
 
-func DistinctMdnsID(slice []string, list []peer.AddrInfo) []string {
+func RemoveMdnsClientFromGuest() {
+	rtkGlobal.MdnsListRWMutex.RLock()
+	defer rtkGlobal.MdnsListRWMutex.RUnlock()
 
-	for _, peer := range list {
-		slice = RemoveMySelfID(slice, peer.ID.String())
+	for _, val := range rtkGlobal.MdnsClientList {
+		rtkGlobal.GuestList = RemoveMySelfID(rtkGlobal.GuestList, val.ID)
 	}
-	return slice
+}
+
+func GetClientList() string {
+	rtkGlobal.MdnsListRWMutex.RLock()
+	defer rtkGlobal.MdnsListRWMutex.RUnlock()
+
+	var clientList string
+	for _, val := range rtkGlobal.MdnsClientList {
+		clientList += val.IpAddr + "#"
+	}
+	return strings.Trim(clientList, "#")
 }
 
 func GetNodeCBData(ipAddr string) (rtkCommon.ClipBoardData, bool) {
@@ -230,7 +256,6 @@ func GetNodeCBData(ipAddr string) (rtkCommon.ClipBoardData, bool) {
 	return rtkCommon.ClipBoardData{}, false
 }
 
-// 解码
 func Base64Decode(src string) []byte {
 	bytes, err := base64.StdEncoding.DecodeString(src)
 	if err != nil {
@@ -241,7 +266,6 @@ func Base64Decode(src string) []byte {
 	return bytes
 }
 
-// 编码
 func Base64Encode(src []byte) string {
 	return base64.StdEncoding.EncodeToString(src)
 }

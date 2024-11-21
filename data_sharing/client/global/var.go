@@ -1,7 +1,6 @@
 package global
 
 import (
-	"github.com/libp2p/go-libp2p/core/peer"
 	rtkCommon "rtk-cross-share/common"
 	"sync"
 	"time"
@@ -20,10 +19,21 @@ var Handler = rtkCommon.P2PHandler{
 	State: rtkCommon.P2PFileTransferState{
 		State: rtkCommon.UNINIT,
 	},
-	DstFile:  nil,
-	SrcFile:  nil,
-	SourceID: "",
-	SourceIP: "",
+	DstFile:       nil,
+	SrcFile:       nil,
+	DstFilePath:   "",
+	SourceID:      "",
+	SourceIP:      "",
+	AppointIpAddr: "",
+	IsFileDropMap: make(map[string]bool),
+	CopyFileName:  "",
+	CopyImgHeader: rtkCommon.ImgHeader{
+		Width:       0,
+		Height:      0,
+		Planes:      0,
+		BitCount:    0,
+		Compression: 0,
+	},
 }
 
 var (
@@ -32,7 +42,8 @@ var (
 	RelayServerID     = "QmYsgB9x85LDSn8aon1kaaFnJP5LbZNv3apJVi67gnr8gv"
 	RelayServerIPInfo = "/ip4/192.168.153.40/tcp/7999/p2p/"
 	GuestList         []string
-	MdnsPeerList      []peer.AddrInfo
+	MdnsClientList    []rtkCommon.ClientInfo
+	MdnsListRWMutex   = sync.RWMutex{}
 
 	CBData sync.Map
 	RTT    map[string]time.Duration = make(map[string]time.Duration)

@@ -7,6 +7,9 @@
 #define DEBUG 1
 
 #if DEBUG
+#ifdef DEBUG_LOG
+#undef DEBUG_LOG
+#endif
 #define DEBUG_LOG(format, ...) printf(format "\n", ##__VA_ARGS__)
 #else
 #define DEBUG_LOG(format, ...) printf("not debug\n")

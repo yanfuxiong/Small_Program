@@ -1,4 +1,5 @@
-$cppFiles = Get-ChildItem -Recurse -Filter *.cpp
+$sourceFolder = ".\clipboard\"
+$cppFiles = Get-ChildItem -Path $sourceFolder -Recurse -Filter *.cpp
 $buildFolder = "clipboard\libs"
 $clipboardLib = "libclipboard.a"
 $clientGo = "main\client_main.go"
@@ -6,11 +7,12 @@ $clientGo = "main\client_main.go"
 # go build param
 $version = "1.0.0"
 $buildDate = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
+$platform = "windows"
 $isHiddenWin = $false
 if ($isHiddenWin) {
-    $ldflags = "-X rtk-cross-share/buildConfig.Version=$version -X rtk-cross-share/buildConfig.BuildDate=$buildDate -H=windowsgui"
+    $ldflags = "-X rtk-cross-share/buildConfig.Version=$version -X rtk-cross-share/buildConfig.Platform=$platform -X rtk-cross-share/buildConfig.BuildDate=$buildDate -H=windowsgui"
 } else {
-    $ldflags = "-X rtk-cross-share/buildConfig.Version=$version -X rtk-cross-share/buildConfig.BuildDate=$buildDate"
+    $ldflags = "-X rtk-cross-share/buildConfig.Version=$version -X rtk-cross-share/buildConfig.Platform=$platform -X rtk-cross-share/buildConfig.BuildDate=$buildDate"
 }
 
 

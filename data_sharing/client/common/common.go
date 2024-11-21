@@ -17,6 +17,11 @@ type NodeInfo struct {
 	ID     string
 }
 
+type ClientInfo struct {
+	ID     string
+	IpAddr string
+}
+
 type SocketErr int
 
 const (
@@ -53,8 +58,10 @@ type P2PHandler struct {
 	CopyImgData   []byte
 	// record the last copy "common" info
 	CopyDataSize FileSize
-	//file name
-	FileName string
+	// record current file is file drop or file copy
+	IsFileDropMap map[string]bool
+	// record the the last copy file name from the remote
+	CopyFileName string
 	// record the last updater from a remote
 	SourceID string
 	SourceIP string
@@ -103,15 +110,24 @@ const (
 	FILE  ClipboardFmtType = "FILE"
 )
 
+type ClipboardResetType int
+
+const (
+	CLIPBOARD_RESET_TYPE_TEXT  = 1 << 0
+	CLIPBOARD_RESET_TYPE_IMAGE = 1 << 1
+	CLIPBOARD_RESET_TYPE_FILE  = 1 << 2
+)
+
 type P2PMessage struct {
-	SourceID      string
-	InbandCmd     P2PFileTransferInbandEnum
-	Hash          string
-	PacketID      int
-	FmtType       ClipboardFmtType
-	Buf           []byte
-	CopySize      FileSize
-	CopyImgHeader ImgHeader // TODO: consider combine CopyImgHeader with Buf
+	SourceID       string
+	SourcePlatform string
+	InbandCmd      P2PFileTransferInbandEnum
+	Hash           string
+	PacketID       int
+	FmtType        ClipboardFmtType
+	Buf            []byte
+	CopySize       FileSize
+	CopyImgHeader  ImgHeader // TODO: consider combine CopyImgHeader with Buf
 }
 
 type ClipBoardData struct {

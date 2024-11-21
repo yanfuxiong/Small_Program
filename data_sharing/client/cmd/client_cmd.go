@@ -86,7 +86,7 @@ func SetupNode() host.Host {
 
 	sourceMultiAddr, _ := multiaddr.NewMultiaddr(sourceAddrStr)
 	node, err := libp2p.New(
-		//libp2p.ListenAddrStrings(listen_addrs(rtkMdns.MdnsCfg.ListenPort)...),	安卓14新平板会报错，这里取的Addrs()最后一位为0，所以改为andriod传进来
+		//libp2p.ListenAddrStrings(listen_addrs(rtkMdns.MdnsCfg.ListenPort)...), // Add mdns port with different initialization
 		libp2p.ListenAddrs(sourceMultiAddr),
 		libp2p.NATPortMap(),
 		libp2p.Identity(priv),
@@ -135,8 +135,8 @@ func Run() {
 	rtkMdns.BuildMdnsListener(node)
 	rtkMdns.BuildMdnsTalker(ctx, node)
 
-	<-time.After(3 * time.Second)                                                              // wait mdns discovery all peers
-	rtkGlobal.GuestList = rtkUtils.DistinctMdnsID(rtkGlobal.GuestList, rtkGlobal.MdnsPeerList) //delete mdns found peer  in global list
+	<-time.After(3 * time.Second) // wait mdns discovery all peers
+	rtkUtils.RemoveMdnsClientFromGuest() //delete mdns found peer in global list
 
 	if len(rtkGlobal.GuestList) == 0 {
 		log.Println("Wait for node")
@@ -193,7 +193,7 @@ func MainInit(cb rtkPlatform.Callback, serverId, serverIpInfo, listenHost string
 		select {}
 	}
 
-	rtkGlobal.GuestList = rtkUtils.DistinctMdnsID(rtkGlobal.GuestList, rtkGlobal.MdnsPeerList) //delete mdns fund peer
+	rtkUtils.RemoveMdnsClientFromGuest() //delete mdns found peer
 	for _, targetId := range rtkGlobal.GuestList {
 		rtkRelay.BuildTalker(ctx, node, targetId)
 	}

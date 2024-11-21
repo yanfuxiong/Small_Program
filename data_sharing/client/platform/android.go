@@ -13,13 +13,13 @@ package platform
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net"
 	"os"
 	rtkCommon "rtk-cross-share/common"
 	rtkGlobal "rtk-cross-share/global"
 	rtkUtils "rtk-cross-share/utils"
+	"strings"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -31,26 +31,18 @@ const (
 	receiveFile = "/storage/emulated/0/Android/data/com.rtk.myapplication/files/"
 )
 
-type ClipBoardTextData struct {
-	LastInputText string
-	CurInputText  string
-}
-
-var CBTextData = ClipBoardTextData{
-	LastInputText: "",
-	CurInputText:  "",
-}
-
 var ImageData []byte
+var curInputText string
 
 type Callback interface {
 	CallbackMethod(result string)
 	CallbackMethodImage(content string)
 	LogMessageCallback(msg string)
 	EventCallback(event int)
-	CallbackMethodFileConfirm(platform string, fileSize int64)
+	CallbackMethodFileConfirm(platform, fileName string, fileSize int64)
 	CallbackMethodFileDone(name string, fileSize int64)
 	CallbackMethodFoundPeer()
+	CallbackUpdateProgressBar(size int)
 }
 
 var CallbackInstance Callback = nil
@@ -60,19 +52,16 @@ func SetCallback(cb Callback) {
 }
 
 func PerformTextTask(msg string) {
-	r := fmt.Sprintf("PerformTextTask - start - msg: %s", msg)
-	log.Println(r)
-	if CallbackInstance != nil {
-		go func() {
-			CallbackInstance.CallbackMethod(msg)
-			log.Println("PerformTextTask - CallbackMethod - done")
-		}()
-	} else {
+	log.Printf("PerformTextTask - start - msg: %s", msg)
+	if CallbackInstance == nil {
 		log.Println("PerformTextTask - failed - callbackInstance is nil")
+		return
 	}
+	CallbackInstance.CallbackMethod(msg)
+	log.Println("PerformTextTask - CallbackMethod - done")
 }
 
-type CallbackFunc func(rtkCommon.ClipboardFmtType)
+type CallbackFunc func(rtkCommon.ClipboardResetType)
 
 var CallbackInstanceResetCB CallbackFunc = nil
 
@@ -81,47 +70,44 @@ func SetResetCBCallback(cb CallbackFunc) {
 }
 
 func WatchClipboardText(ctx context.Context, resultChan chan<- rtkCommon.ClipBoardData) {
+	var lastInputText string // this must be local variable
+
 	for {
-		if len(CBTextData.CurInputText) > 0 && CBTextData.CurInputText != CBTextData.LastInputText {
-			log.Println("android watchClipboardText - got new message: ", CBTextData.CurInputText)
-			CBTextData.LastInputText = CBTextData.CurInputText
-			hash, err := rtkUtils.CreateMD5Hash([]byte(CBTextData.LastInputText))
-			if err != nil {
-				log.Fatalf("Failed to create hash: %v", err)
+		select {
+		case <-ctx.Done():
+			return
+
+		case <-time.After(100 * time.Millisecond):
+			if len(curInputText) > 0 && !strings.EqualFold(curInputText, lastInputText) {
+				log.Println("watchClipboardText - got new message: ", curInputText)
+				lastInputText = curInputText
+
+				hash, err := rtkUtils.CreateMD5Hash([]byte(curInputText))
+				if err != nil {
+					log.Fatalf("Failed to create hash: %v", err)
+				}
+				resultChan <- rtkCommon.ClipBoardData{
+					SourceID: rtkGlobal.NodeInfo.ID,
+					Content:  []byte(curInputText),
+					FmtType:  rtkCommon.TEXT,
+					Hash:     hash.B58String(),
+				}
 			}
-			resultChan <- rtkCommon.ClipBoardData{
-				SourceID: rtkGlobal.NodeInfo.ID,
-				Content:  []byte(CBTextData.LastInputText),
-				FmtType:  rtkCommon.TEXT,
-				Hash:     hash.B58String(),
-			}
-		} else {
-			time.Sleep(time.Second)
-			//log.Println("watchClipboardText - no new message")
 		}
 	}
+
 }
 
 func WatchAndroidClipboardText(s net.Conn) {
 	log.Println("watchAndroidClipboardText")
-	for {
-		if len(CBTextData.CurInputText) > 0 && CBTextData.CurInputText != CBTextData.LastInputText {
-			CBTextData.LastInputText = CBTextData.CurInputText
-			if _, err := s.Write([]byte(CBTextData.LastInputText)); err != nil {
-				log.Println("Cannot write")
-			}
-			fmt.Println(">>>")
-		}
-		time.Sleep(time.Second)
-	}
 }
 
 func SendMessage(s string) {
-	log.Printf("android SendMessage:[%s] ", s)
+	log.Printf("SendMessage:[%s] ", s)
 	if s == "" || len(s) == 0 {
 		return
 	}
-	CBTextData.CurInputText = s
+	curInputText = s
 }
 
 func SetupCallbackSettings() {
@@ -132,19 +118,22 @@ func GoClipboardPasteFileCallback(content string) {
 
 }
 
-func GoSetupDstPasteFile(desc string, fileName string, fileSizeHigh uint32, fileSizeLow uint32) {
-	log.Printf("GoSetupDstPasteFile  sourceID：%s fileName:[%s] [%d][%d]", desc, fileName, fileSizeHigh, fileSizeLow)
+func GoSetupDstPasteFile(desc string, fileName, platform string, fileSizeHigh uint32, fileSizeLow uint32) {
+	fileSize := int64(fileSizeHigh)<<32 | int64(fileSizeLow)
+	log.Printf("(DST) GoSetupDstPasteFile  sourceID:%s fileName:[%s] fileSize:[%d]", desc, fileName, fileSize)
+	rtkGlobal.Handler.CopyFileName = fileName
+	CallbackInstance.CallbackMethodFileConfirm(platform, fileName, fileSize)
 }
 
-func GoSetupFileDrop(desc string, fileName string, fileSizeHigh uint32, fileSizeLow uint32) {
+func GoSetupFileDrop(desc string, fileName, platform string, fileSizeHigh uint32, fileSizeLow uint32) {
 	fileSize := int64(fileSizeHigh)<<32 | int64(fileSizeLow)
-	log.Printf("GoSetupFileDrop  source:%s name:%s  fileSize:%d", desc, fileName, fileSize)
-	rtkGlobal.Handler.FileName = fileName
-	CallbackInstance.CallbackMethodFileConfirm("android", fileSize)
+	log.Printf("(DST) GoSetupFileDrop  source:%s fileName:%s  fileSize:%d", desc, fileName, fileSize)
+	rtkGlobal.Handler.CopyFileName = fileName
+	CallbackInstance.CallbackMethodFileConfirm(platform, fileName, fileSize)
 }
 
 func ReceiveCopyDataDone(fileType rtkCommon.ClipboardFmtType, fileSize int64) {
-	log.Printf("ReceiveFileDone: %s  size:%d", fileType, fileSize)
+	log.Printf("ReceiveCopyDataDone: %s  size:%d", fileType, fileSize)
 	if CallbackInstance == nil {
 		log.Println(" CallbackInstance is null !")
 		return
@@ -154,22 +143,20 @@ func ReceiveCopyDataDone(fileType rtkCommon.ClipboardFmtType, fileSize int64) {
 		CallbackInstance.CallbackMethodFileDone(rtkGlobal.Handler.DstFilePath, fileSize)
 	} else if fileType == rtkCommon.IMAGE {
 		go func() {
-
 			imageBase64 := rtkUtils.Base64Encode(rtkUtils.BitmapToImage(ImageData, int(rtkGlobal.Handler.CopyImgHeader.Width), int(rtkGlobal.Handler.CopyImgHeader.Height)))
-
-			//log.Printf("len[%d][%d][%d][%+v]", len(ImageData), len(imageBase64), rtkGlobal.Handler.CopyImgHeader.Width, imageBase64)
+			// log.Printf("len[%d][%d][%d][%+v]", len(ImageData), len(imageBase64), rtkGlobal.Handler.CopyImgHeader.Width, imageBase64)
 			CallbackInstance.CallbackMethodImage(imageBase64)
 		}()
 	}
 }
 
 func FoundPeer() {
-	log.Println("android CallbackMethodFoundPeer")
+	log.Println("CallbackMethodFoundPeer")
 	CallbackInstance.CallbackMethodFoundPeer()
 }
 
 func GoSetupDstPasteImage(desc string, content []byte, imgHeader rtkCommon.ImgHeader, dataSize uint32) {
-	log.Printf("android GoSetupDstPasteImage from ID %s, len:[%d] CopySize.SizeLow:[%d]\n\n", desc, len(content), dataSize)
+	log.Printf("GoSetupDstPasteImage from ID %s, len:[%d] CopySize.SizeLow:[%d]\n\n", desc, len(content), dataSize)
 
 	rtkGlobal.Handler.CopyImgHeader.Height = imgHeader.Height
 	rtkGlobal.Handler.CopyImgHeader.Width = imgHeader.Width
@@ -184,8 +171,19 @@ func GoSetupDstPasteImage(desc string, content []byte, imgHeader rtkCommon.ImgHe
 }
 
 func GoDataTransfer(data []byte) {
-	log.Println("GoDataTransfer len:", len(data))
 	ImageData = append(ImageData, data...)
+}
+
+func GoUpdateProgressBar(size int) {
+	//log.Println("GoUpdateProgressBar size:", size)
+	CallbackInstance.CallbackUpdateProgressBar(size)
+}
+
+func GoDeinitProgressBar() {
+
+}
+
+func GoUpdateClientStatus(status uint32, ip string, id string, name string) {
 
 }
 
@@ -194,7 +192,7 @@ func GoEventHandle(eventType int) {
 }
 
 func GoSetupDstPasteText(content []byte) {
-	log.Printf("android GoSetupDstPasteText:%s \n\n", string(content))
+	log.Printf("GoSetupDstPasteText:%s \n\n", string(content))
 	PerformTextTask(string(content))
 }
 

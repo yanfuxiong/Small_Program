@@ -1,3 +1,5 @@
+//go:build android
+
 package libp2p_clipboard
 
 import (
@@ -15,8 +17,13 @@ type Callback interface {
 	rtkPlatform.Callback
 }
 
-func MainInit(cb Callback, serverId string, serverIpInfo, listentHost string, listentPort int) {
+// TODO: consider to replace int with long long type
+func MainInit(cb Callback, serverId, serverIpInfo, listentHost string, listentPort int) {
 	rtkCmd.MainInit(cb, serverId, serverIpInfo, listentHost, listentPort)
+}
+
+func SetMainCallback(cb Callback) {
+	rtkPlatform.SetCallback(cb)
 }
 
 func SendMessage(s string) {
@@ -24,15 +31,9 @@ func SendMessage(s string) {
 }
 
 func GetClientList() string {
-
-	log.Printf("GetClientList  len:%d", len(rtkGlobal.MdnsPeerList))
-	var clientList string
-	for _, val := range rtkGlobal.MdnsPeerList {
-		ip, port := rtkUtils.ExtractTCPIPandPort(val.Addrs[0])
-		clientList = clientList + rtkUtils.ConcatIP(ip, port) + "#"
-	}
-
-	return strings.Trim(clientList, "#")
+	clientList := rtkUtils.GetClientList()
+	log.Printf("GetClientList :[%s]", clientList)
+	return clientList
 }
 
 func SendImage(content string, ipAddr string) {
@@ -45,8 +46,11 @@ func SendImage(content string, ipAddr string) {
 	}
 
 	w, h, size := rtkUtils.GetByteImageInfo(data)
-
-	log.Printf("android SendImage:[%d][%d][%d][%s]", len(content), len(data), size, ipAddr)
+	if size == 0 {
+		log.Println("GetByteImageInfo err!")
+		return
+	}
+	log.Printf("SendImage:[%d][%d][%d][%s]", len(content), len(data), size, ipAddr)
 
 	rtkGlobal.Handler.CopyImgHeader.Width = int32(w)
 	rtkGlobal.Handler.CopyImgHeader.Height = int32(h)
@@ -69,7 +73,12 @@ func SendNetInterfaces(name, mac string) {
 	rtkUtils.SetNetInterfaces(name, mac)
 }
 
+// TODO: consider to replace int with long long type
 func SendCopyFile(filePath, ipAddr string, fileSizeHigh, fileSizeLow int) {
+	if filePath == "" || len(filePath) == 0 || fileSizeLow == 0 {
+		log.Printf("filePath:[%s] or fileSizeLow:[%d] is null", filePath, fileSizeLow)
+		return
+	}
 	rtkGlobal.Handler.AppointIpAddr = ipAddr
 	var fileInfo = rtkCommon.FileInfo{
 		FileSize_: rtkCommon.FileSize{
@@ -79,23 +88,21 @@ func SendCopyFile(filePath, ipAddr string, fileSizeHigh, fileSizeLow int) {
 		FilePath: filePath,
 	}
 	rtkFileDrop.SendFileDropCmd(rtkCommon.FILE_DROP_REQUEST, fileInfo)
-	log.Println("andriod Send file content:", rtkGlobal.Handler.CopyFilePath.Load().(string), "fileSize high:", fileSizeHigh, "low:", fileSizeLow)
+	log.Println("(SRC)Send file:", rtkGlobal.Handler.CopyFilePath.Load().(string), "fileSize high:", fileSizeHigh, "low:", fileSizeLow)
 }
 
-// 接收方确认是否接收文档
 func IfClipboardPasteFile(isReceive bool) {
-	log.Println("andriod IfClipboardPasteFile:  ", isReceive)
 	if isReceive {
-		rtkGlobal.Handler.CtxMutex.Lock()
-		defer rtkGlobal.Handler.CtxMutex.Unlock()
-		rtkGlobal.Handler.State.State = rtkCommon.DEST_INIT
 		fileFullName := rtkPlatform.GetReceiveFilePath()
-		if rtkGlobal.Handler.FileName != "" {
-			fileFullName = fileFullName + rtkGlobal.Handler.FileName
+		if rtkGlobal.Handler.CopyFileName != "" {
+			fileFullName += rtkGlobal.Handler.CopyFileName
 		} else {
-			fileFullName = fileFullName + "recevie.file"
+			fileFullName += "recevie.file"
 		}
-		rtkGlobal.Handler.DstFilePath = fileFullName
-		log.Printf("DstFilePath1:[%s] ", rtkGlobal.Handler.DstFilePath)
+
+		rtkFileDrop.SendFileDropCmd(rtkCommon.FILE_DROP_ACCEPT, fileFullName)
+		log.Printf("(DST) FilePath:[%s] confirm receipt", rtkGlobal.Handler.DstFilePath)
+	} else {
+		log.Printf("(DST) Filename:[%s] reject.", rtkGlobal.Handler.CopyFileName)
 	}
 }
