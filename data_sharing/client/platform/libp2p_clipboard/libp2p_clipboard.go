@@ -36,7 +36,7 @@ func GetClientList() string {
 	return clientList
 }
 
-func SendImage(content string, ipAddr string) {
+func SendImage(content, ipAddr string) {
 	if content == "" || len(content) == 0 {
 		return
 	}
@@ -51,16 +51,19 @@ func SendImage(content string, ipAddr string) {
 		return
 	}
 	log.Printf("SendImage:[%d][%d][%d][%s]", len(content), len(data), size, ipAddr)
+	rtkGlobal.Handler.CopyImgData = rtkUtils.ImageToBitmap(data)
+	if len(rtkGlobal.Handler.CopyImgData) == 0 {
+		log.Println("ImageToBitmap  err!")
+		return
+	}
 
 	rtkGlobal.Handler.CopyImgHeader.Width = int32(w)
 	rtkGlobal.Handler.CopyImgHeader.Height = int32(h)
 	rtkGlobal.Handler.CopyImgHeader.Compression = 0
 	rtkGlobal.Handler.CopyImgHeader.Planes = 1
 	rtkGlobal.Handler.CopyImgHeader.BitCount = uint16((size * 8) / (w * h))
-	rtkGlobal.Handler.CopyImgData = rtkUtils.ImageToBitmap(data)
 	rtkGlobal.Handler.CopyDataSize.SizeHigh = 0
 	rtkGlobal.Handler.CopyDataSize.SizeLow = uint32(size)
-	rtkGlobal.Handler.AppointIpAddr = ipAddr
 }
 
 func SendAddrsFromJava(addrsList string) {
@@ -74,21 +77,25 @@ func SendNetInterfaces(name, mac string) {
 }
 
 // TODO: consider to replace int with long long type
-func SendCopyFile(filePath, ipAddr string, fileSizeHigh, fileSizeLow int) {
-	if filePath == "" || len(filePath) == 0 || fileSizeLow == 0 {
-		log.Printf("filePath:[%s] or fileSizeLow:[%d] is null", filePath, fileSizeLow)
+func SendCopyFile(filePath, ipAddr string, fileSizeHigh, fileSize int64) {
+	if filePath == "" || len(filePath) == 0 || fileSize <= 0 {
+		log.Printf("filePath:[%s] or fileSizeLow:[%d] is null", filePath, fileSize)
 		return
 	}
 	rtkGlobal.Handler.AppointIpAddr = ipAddr
+
+	low := uint32(fileSize & 0xFFFFFFFF)
+	high := uint32(fileSize >> 32)
+
 	var fileInfo = rtkCommon.FileInfo{
 		FileSize_: rtkCommon.FileSize{
-			SizeHigh: uint32(fileSizeHigh),
-			SizeLow:  uint32(fileSizeLow),
+			SizeHigh: high,
+			SizeLow:  low,
 		},
 		FilePath: filePath,
 	}
 	rtkFileDrop.SendFileDropCmd(rtkCommon.FILE_DROP_REQUEST, fileInfo)
-	log.Println("(SRC)Send file:", rtkGlobal.Handler.CopyFilePath.Load().(string), "fileSize high:", fileSizeHigh, "low:", fileSizeLow)
+	log.Printf("(SRC)Send file:[%s], fileSize:%d", rtkGlobal.Handler.CopyFilePath.Load().(string), fileSize)
 }
 
 func IfClipboardPasteFile(isReceive bool) {

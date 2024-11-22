@@ -14,7 +14,6 @@ package platform
 import (
 	"context"
 	"log"
-	"net"
 	"os"
 	rtkCommon "rtk-cross-share/common"
 	rtkGlobal "rtk-cross-share/global"
@@ -43,6 +42,7 @@ type Callback interface {
 	CallbackMethodFileDone(name string, fileSize int64)
 	CallbackMethodFoundPeer()
 	CallbackUpdateProgressBar(size int)
+	CallbackMethodFileError(name, err string)
 }
 
 var CallbackInstance Callback = nil
@@ -98,10 +98,6 @@ func WatchClipboardText(ctx context.Context, resultChan chan<- rtkCommon.ClipBoa
 
 }
 
-func WatchAndroidClipboardText(s net.Conn) {
-	log.Println("watchAndroidClipboardText")
-}
-
 func SendMessage(s string) {
 	log.Printf("SendMessage:[%s] ", s)
 	if s == "" || len(s) == 0 {
@@ -118,30 +114,30 @@ func GoClipboardPasteFileCallback(content string) {
 
 }
 
-func GoSetupDstPasteFile(desc string, fileName, platform string, fileSizeHigh uint32, fileSizeLow uint32) {
+func GoSetupDstPasteFile(desc, fileName, platform string, fileSizeHigh uint32, fileSizeLow uint32) {
 	fileSize := int64(fileSizeHigh)<<32 | int64(fileSizeLow)
 	log.Printf("(DST) GoSetupDstPasteFile  sourceID:%s fileName:[%s] fileSize:[%d]", desc, fileName, fileSize)
 	rtkGlobal.Handler.CopyFileName = fileName
 	CallbackInstance.CallbackMethodFileConfirm(platform, fileName, fileSize)
 }
 
-func GoSetupFileDrop(desc string, fileName, platform string, fileSizeHigh uint32, fileSizeLow uint32) {
+func GoSetupFileDrop(desc, fileName, platform string, fileSizeHigh uint32, fileSizeLow uint32) {
 	fileSize := int64(fileSizeHigh)<<32 | int64(fileSizeLow)
 	log.Printf("(DST) GoSetupFileDrop  source:%s fileName:%s  fileSize:%d", desc, fileName, fileSize)
 	rtkGlobal.Handler.CopyFileName = fileName
 	CallbackInstance.CallbackMethodFileConfirm(platform, fileName, fileSize)
 }
 
-func ReceiveCopyDataDone(fileType rtkCommon.ClipboardFmtType, fileSize int64) {
-	log.Printf("ReceiveCopyDataDone: %s  size:%d", fileType, fileSize)
+func ReceiveCopyDataDone(fmtType rtkCommon.ClipboardFmtType, fileSize int64) {
+	log.Printf("ReceiveCopyDataDone: %s  size:%d", fmtType, fileSize)
 	if CallbackInstance == nil {
 		log.Println(" CallbackInstance is null !")
 		return
 	}
 
-	if fileType == rtkCommon.FILE {
+	if fmtType == rtkCommon.FILE {
 		CallbackInstance.CallbackMethodFileDone(rtkGlobal.Handler.DstFilePath, fileSize)
-	} else if fileType == rtkCommon.IMAGE {
+	} else if fmtType == rtkCommon.IMAGE {
 		go func() {
 			imageBase64 := rtkUtils.Base64Encode(rtkUtils.BitmapToImage(ImageData, int(rtkGlobal.Handler.CopyImgHeader.Width), int(rtkGlobal.Handler.CopyImgHeader.Height)))
 			// log.Printf("len[%d][%d][%d][%+v]", len(ImageData), len(imageBase64), rtkGlobal.Handler.CopyImgHeader.Width, imageBase64)
@@ -187,7 +183,17 @@ func GoUpdateClientStatus(status uint32, ip string, id string, name string) {
 
 }
 
-func GoEventHandle(eventType int) {
+func GoEventHandle(fmtType rtkCommon.ClipboardFmtType, eventType int) {
+	var strErr string
+	if eventType == rtkCommon.EVENT_TYPE_OPEN_FILE_ERR {
+		strErr = "open src file err!"
+	} else if eventType == rtkCommon.EVENT_TYPE_RECV_TIMEOUT {
+		strErr = "revive file time out!"
+	}
+
+	if fmtType == rtkCommon.FILE {
+		CallbackInstance.CallbackMethodFileError(rtkGlobal.Handler.DstFilePath, strErr)
+	}
 
 }
 

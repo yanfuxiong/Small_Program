@@ -48,10 +48,12 @@ func BitmapToImage(bitmapData []byte, w, h int) []byte {
 		for x := 0; x < w; x++ {
 			i := (y*w + x) * 4
 
-			/*img.Pix[4*(x+y*w)] = bitmapData[i+2]   //B
-			img.Pix[4*(x+y*w)+1] = bitmapData[i+1] //g
-			img.Pix[4*(x+y*w)+2] = bitmapData[i]   //r
-			img.Pix[4*(x+y*w)+3] = 255             //A*/
+			/*
+				img.Pix[4*(x+y*w)] = bitmapData[i+2]   //B
+				img.Pix[4*(x+y*w)+1] = bitmapData[i+1] //g
+				img.Pix[4*(x+y*w)+2] = bitmapData[i]   //r
+				img.Pix[4*(x+y*w)+3] = 255             //A
+			*/
 
 			offset := 4 * ((w - 1 - x) + y*w)
 			img.Pix[offset] = bitmapData[i+2]
@@ -92,10 +94,10 @@ func GetByteImageInfo(data []byte) (wight, height, size int) {
 func ImageToBitmap(imgData []byte) []byte {
 	img, err := png.Decode(bytes.NewReader(imgData))
 	if err != nil {
-		//log.Println(err)
+		log.Println("png decode err, try jpeg...")
 		img, err = jpeg.Decode(bytes.NewReader(imgData))
 		if err != nil {
-			log.Println("jpeg err:", err)
+			log.Println("jpeg decode err:", err)
 			return nil
 		}
 	}

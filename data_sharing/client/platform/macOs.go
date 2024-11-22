@@ -106,7 +106,7 @@ func GoUpdateClientStatus(status uint32, ip string, id string, name string) {
 
 }
 
-func GoEventHandle(eventType int) {
+func GoEventHandle(fmtType rtkCommon.ClipboardFmtType, eventType int) {
 
 }
 

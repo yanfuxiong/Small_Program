@@ -56,11 +56,7 @@ func WatchClipboardFiles(ctx context.Context, resultChan chan<- rtkCommon.ClipBo
 		case <-ctx.Done():
 			return
 		case <-time.After(100 * time.Millisecond):
-			filePath, ok := rtkGlobal.Handler.CopyFilePath.Load().(string)
-			if ok && filePath == "" {
-				continue
-			}
-
+			filePath := rtkGlobal.Handler.CopyFilePath.Load().(string)
 			currentContent := []byte(filePath)
 			if !rtkUtils.ContentEqual(lastContent, currentContent) {
 				ResetClipboard(rtkCommon.CLIPBOARD_RESET_TYPE_IMAGE)

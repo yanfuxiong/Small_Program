@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	rtkBuildConfig "rtk-cross-share/buildConfig"
+	"strings"
 	"time"
 
 	rtkClipboard "rtk-cross-share/clipboard"
@@ -40,13 +41,17 @@ func P2PRead(s net.Conn, ipAddr string, ctx context.Context, cancelFunc context.
 				if errSocket == rtkCommon.ERR_NETWORK {
 					cancelFunc()
 					return
-				} else {
+				} else if errSocket == rtkCommon.ERR_RESET {
+					// TODO: consider  to reconnect peer
 					time.Sleep(3 * time.Second)
+					cancelFunc()
+					continue
+				} else {
+					time.Sleep(1 * time.Second)
 					continue
 				}
 			}
 
-			//log.Println("read msg = ", msg)
 			if !HandleDataTransferRead(s, ipAddr, msg) {
 				HandleDataPasteToCBProcess(msg, ipAddr)
 			}
@@ -348,6 +353,9 @@ func ReadFromSocket(msg *rtkCommon.P2PMessage, s net.Conn) rtkCommon.SocketErr {
 		if netErr, ok := err.(net.Error); ok {
 			log.Println("Read fail network error", netErr.Error())
 			return rtkCommon.ERR_NETWORK
+		} else if strings.Contains(err.Error(), "stream reset") {
+			log.Print("Read fail", err.Error())
+			return rtkCommon.ERR_RESET
 		} else {
 			log.Println("Read fail", err.Error())
 			return rtkCommon.ERR_OTHER
@@ -404,12 +412,12 @@ func WriteDstFile(content []byte) {
 	}
 }
 
-func HandleDataTransferError(inbandCmd rtkCommon.P2PFileTransferInbandEnum) {
+func HandleDataTransferError(fmtType rtkCommon.ClipboardFmtType, inbandCmd rtkCommon.P2PFileTransferInbandEnum) {
 	switch inbandCmd {
 	case rtkCommon.FILE_TRAN_CANCEL_SRC:
-		rtkPlatform.GoEventHandle(rtkCommon.EVENT_TYPE_OPEN_FILE_ERR)
+		rtkPlatform.GoEventHandle(fmtType, rtkCommon.EVENT_TYPE_OPEN_FILE_ERR)
 	case rtkCommon.FILE_TRAN_CANCEL_DST:
-		rtkPlatform.GoEventHandle(rtkCommon.EVENT_TYPE_RECV_TIMEOUT)
+		rtkPlatform.GoEventHandle(fmtType, rtkCommon.EVENT_TYPE_RECV_TIMEOUT)
 	default:
 		fmt.Println("[DataTransferError]: Unhandled type")
 	}
@@ -423,6 +431,7 @@ func IsTransferError(buffer []byte) bool {
 	}
 
 	data := bytes.Trim(buffer, "\x00")
+	data = bytes.Trim(buffer, "\x13")
 	err := json.Unmarshal(data, &msg)
 	if err != nil {
 		return false
@@ -492,13 +501,14 @@ func HandleDataTransferWrite(s net.Conn, ipAddr string) bool {
 		return true
 	} else if rtkGlobal.Handler.State.State == rtkCommon.PROCESSING_TRAN_ING_ACK {
 		fileSize := int64(rtkGlobal.Handler.CopyDataSize.SizeHigh)<<32 | int64(rtkGlobal.Handler.CopyDataSize.SizeLow)
-		log.Printf("(DST) Start to Copy  size:[%d]...", fileSize)
+		log.Printf("(DST) Start to Copy, total size:[%d]...", fileSize)
 		receivedBytes := int64(0)
 		buffer := make([]byte, 32*1024)
 
 		startTime := time.Now().UnixNano()
 		// TODO: read data timeout
 		// s.SetReadDeadline(time.Now().Add(10 * time.Second))
+		bSuccessFlag := true
 		for receivedBytes < fileSize {
 			n, err := s.Read(buffer)
 			log.Println("Receive data size:", n)
@@ -512,9 +522,10 @@ func HandleDataTransferWrite(s net.Conn, ipAddr string) bool {
 						FmtType:   "",
 					}
 					WriteToSocket(msg, s)
-					HandleDataTransferError(rtkCommon.FILE_TRAN_CANCEL_DST)
+					HandleDataTransferError(msg.FmtType, rtkCommon.FILE_TRAN_CANCEL_DST)
 				}
 				fmt.Println("Error reading from connection:", err)
+				bSuccessFlag = false
 				break
 			}
 			if n == 0 {
@@ -523,15 +534,19 @@ func HandleDataTransferWrite(s net.Conn, ipAddr string) bool {
 
 			// Source cancel transfer file
 			if IsTransferError(buffer[:n]) {
-				HandleDataTransferError(rtkCommon.FILE_TRAN_CANCEL_SRC)
+				HandleDataTransferError(msg.FmtType, rtkCommon.FILE_TRAN_CANCEL_SRC)
+				bSuccessFlag = false
 				break
 			}
 			WriteDstFile(buffer[:n])
 			receivedBytes += int64(n)
 		}
 		// s.SetReadDeadline(time.Time{})
-		log.Printf("(DST) End to Copy, use [%d] ms...", (time.Now().UnixNano()-startTime)/1e6)
-		rtkPlatform.ReceiveCopyDataDone(msg.FmtType, fileSize)
+		log.Printf("(DST) End to Copy, Receive size[%d], use [%d] ms...", receivedBytes, (time.Now().UnixNano()-startTime)/1e6)
+		if bSuccessFlag {
+			rtkPlatform.ReceiveCopyDataDone(msg.FmtType, fileSize)
+		}
+
 		if msg.FmtType == rtkCommon.FILE {
 			CloseDstFile()
 		}

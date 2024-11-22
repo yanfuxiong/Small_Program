@@ -278,7 +278,7 @@ func GoUpdateClientStatus(status uint32, ip string, id string, name string) {
 }
 
 // export EventHandle
-func GoEventHandle(eventType int) {
+func GoEventHandle(fmtType rtkCommon.ClipboardFmtType, eventType int) {
 	C.EventHandle(C.EVENT_TYPE(eventType))
 }
 

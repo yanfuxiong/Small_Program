@@ -46,6 +46,7 @@ func MdnsHandleStream(stream network.Stream) {
 		log.Println("Lost connection with ID:", stream.Conn().RemotePeer().String(), " IP:", ipAddr)
 		fmt.Println("************************************************")
 		rtkPlatform.GoUpdateClientStatus(0, ipAddr, stream.Conn().RemotePeer().String(), ipAddr)
+		stream.Close()
 	}()
 
 }
@@ -83,5 +84,6 @@ func ExecuteDirectConnect(ctx context.Context, stream network.Stream) {
 		log.Println("Lost connection with ID:", stream.Conn().RemotePeer().String(), " IP:", ipAddr)
 		fmt.Println("************************************************")
 		rtkPlatform.GoUpdateClientStatus(0, ipAddr, stream.Conn().RemotePeer().String(), ipAddr)
+		stream.Close()
 	}()
 }

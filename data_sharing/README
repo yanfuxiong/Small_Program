@@ -9,4 +9,8 @@
 #Step1: ./build_windows.ps1
 #Step2: ./client_windows
 
+
+
+#on windows to build
 PowerShell   &".\build_windows.ps1"
+Git Bash     ./build_android.sh
