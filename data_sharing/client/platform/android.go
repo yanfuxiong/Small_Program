@@ -42,7 +42,6 @@ type Callback interface {
 	CallbackMethodFileDone(name string, fileSize int64)
 	CallbackMethodFoundPeer()
 	CallbackUpdateProgressBar(size int)
-	CallbackMethodFileError(name, err string)
 }
 
 var CallbackInstance Callback = nil
@@ -184,16 +183,6 @@ func GoUpdateClientStatus(status uint32, ip string, id string, name string) {
 }
 
 func GoEventHandle(fmtType rtkCommon.ClipboardFmtType, eventType int) {
-	var strErr string
-	if eventType == rtkCommon.EVENT_TYPE_OPEN_FILE_ERR {
-		strErr = "open src file err!"
-	} else if eventType == rtkCommon.EVENT_TYPE_RECV_TIMEOUT {
-		strErr = "revive file time out!"
-	}
-
-	if fmtType == rtkCommon.FILE {
-		CallbackInstance.CallbackMethodFileError(rtkGlobal.Handler.DstFilePath, strErr)
-	}
 
 }
 
