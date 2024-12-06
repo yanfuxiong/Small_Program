@@ -8,6 +8,7 @@ import (
 	rtkFileDrop "rtk-cross-share/filedrop"
 	rtkGlobal "rtk-cross-share/global"
 	rtkPlatform "rtk-cross-share/platform"
+	rtkUtils "rtk-cross-share/utils"
 	"strings"
 )
 
@@ -97,6 +98,9 @@ func DebugCmdLine() {
 				FilePath: test_case_5.FileName,
 			}
 			rtkFileDrop.SendFileDropCmd(rtkCommon.FILE_DROP_REQUEST, fileInfo)
+		} else if strings.Contains(line, "GetClientList") {
+			clientList := rtkUtils.GetClientList()
+			fmt.Println("GetClientList : ", clientList)
 		}
 	}
 }

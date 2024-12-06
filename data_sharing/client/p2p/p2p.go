@@ -43,7 +43,7 @@ func P2PRead(s net.Conn, ipAddr string, ctx context.Context, cancelFunc context.
 					return
 				} else if errSocket == rtkCommon.ERR_RESET {
 					// TODO: consider  to reconnect peer
-					time.Sleep(3 * time.Second)
+					time.Sleep(1 * time.Second)
 					cancelFunc()
 					continue
 				} else {
@@ -262,7 +262,7 @@ func WatchP2PFileTransferState(ctx context.Context, resultChan chan<- bool) {
 func HandleDataCopyProcess(s net.Conn, cbData rtkCommon.ClipBoardData, ipAddr string) {
 	targetCbData, _ := rtkUtils.GetNodeCBData(ipAddr)
 	if cbData.Hash != targetCbData.Hash {
-		if cbData.FmtType == rtkCommon.FILE || cbData.FmtType == rtkCommon.IMAGE {
+		if cbData.FmtType == rtkCommon.FILE {
 			if rtkGlobal.Handler.AppointIpAddr != "" && ipAddr != rtkGlobal.Handler.AppointIpAddr {
 				log.Println("specify the transmission peer is: ", rtkGlobal.Handler.AppointIpAddr, " peer:", ipAddr, " continue")
 				return
@@ -354,7 +354,7 @@ func ReadFromSocket(msg *rtkCommon.P2PMessage, s net.Conn) rtkCommon.SocketErr {
 			log.Println("Read fail network error", netErr.Error())
 			return rtkCommon.ERR_NETWORK
 		} else if strings.Contains(err.Error(), "stream reset") {
-			log.Print("Read fail", err.Error())
+			log.Println("Read fail ", err.Error())
 			return rtkCommon.ERR_RESET
 		} else {
 			log.Println("Read fail", err.Error())
@@ -508,7 +508,6 @@ func HandleDataTransferWrite(s net.Conn, ipAddr string) bool {
 		startTime := time.Now().UnixNano()
 		// TODO: read data timeout
 		// s.SetReadDeadline(time.Now().Add(10 * time.Second))
-		bSuccessFlag := true
 		for receivedBytes < fileSize {
 			n, err := s.Read(buffer)
 			log.Println("Receive data size:", n)
@@ -525,7 +524,6 @@ func HandleDataTransferWrite(s net.Conn, ipAddr string) bool {
 					HandleDataTransferError(msg.FmtType, rtkCommon.FILE_TRAN_CANCEL_DST)
 				}
 				fmt.Println("Error reading from connection:", err)
-				bSuccessFlag = false
 				break
 			}
 			if n == 0 {
@@ -535,7 +533,6 @@ func HandleDataTransferWrite(s net.Conn, ipAddr string) bool {
 			// Source cancel transfer file
 			if IsTransferError(buffer[:n]) {
 				HandleDataTransferError(msg.FmtType, rtkCommon.FILE_TRAN_CANCEL_SRC)
-				bSuccessFlag = false
 				break
 			}
 			WriteDstFile(buffer[:n])
@@ -543,9 +540,7 @@ func HandleDataTransferWrite(s net.Conn, ipAddr string) bool {
 		}
 		// s.SetReadDeadline(time.Time{})
 		log.Printf("(DST) End to Copy, Receive size[%d], use [%d] ms...", receivedBytes, (time.Now().UnixNano()-startTime)/1e6)
-		if bSuccessFlag {
-			rtkPlatform.ReceiveCopyDataDone(msg.FmtType, fileSize)
-		}
+		rtkPlatform.ReceiveCopyDataDone(msg.FmtType, fileSize)
 
 		if msg.FmtType == rtkCommon.FILE {
 			CloseDstFile()

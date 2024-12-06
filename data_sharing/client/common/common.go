@@ -61,7 +61,7 @@ type P2PHandler struct {
 	CopyDataSize FileSize
 	// record current file is file drop or file copy
 	IsFileDropMap map[string]bool
-	// record the the last copy file name from the remote
+	// record the last copy file name from the remote
 	CopyFileName string
 	// record the last updater from a remote
 	SourceID string

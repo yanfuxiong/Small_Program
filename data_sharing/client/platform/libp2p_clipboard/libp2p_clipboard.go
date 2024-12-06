@@ -36,7 +36,7 @@ func GetClientList() string {
 	return clientList
 }
 
-func SendImage(content, ipAddr string) {
+func SendImage(content string) {
 	if content == "" || len(content) == 0 {
 		return
 	}
@@ -50,7 +50,7 @@ func SendImage(content, ipAddr string) {
 		log.Println("GetByteImageInfo err!")
 		return
 	}
-	log.Printf("SendImage:[%d][%d][%d][%s]", len(content), len(data), size, ipAddr)
+	log.Printf("SendImage:[%d][%d] size:[%d]", len(content), len(data), size)
 	rtkGlobal.Handler.CopyImgData = rtkUtils.ImageToBitmap(data)
 	if len(rtkGlobal.Handler.CopyImgData) == 0 {
 		log.Println("ImageToBitmap  err!")
@@ -71,15 +71,14 @@ func SendAddrsFromJava(addrsList string) {
 	rtkUtils.GetAddrsFromJava(parts)
 }
 
-func SendNetInterfaces(name, mac string) {
-	log.Printf("SendNetInterfaces [%s][%s]", name, mac)
-	rtkUtils.SetNetInterfaces(name, mac)
+func SendNetInterfaces(name string, index int) {
+	log.Printf("SendNetInterfaces [%s][%d]", name, index)
+	rtkUtils.SetNetInterfaces(name, index)
 }
 
-// TODO: consider to replace int with long long type
-func SendCopyFile(filePath, ipAddr string, fileSizeHigh, fileSize int64) {
+func SendCopyFile(filePath, ipAddr string, fileSize int64) {
 	if filePath == "" || len(filePath) == 0 || fileSize <= 0 {
-		log.Printf("filePath:[%s] or fileSizeLow:[%d] is null", filePath, fileSize)
+		log.Printf("filePath:[%s] or fileSize:[%d] is null", filePath, fileSize)
 		return
 	}
 	rtkGlobal.Handler.AppointIpAddr = ipAddr
@@ -110,6 +109,7 @@ func IfClipboardPasteFile(isReceive bool) {
 		rtkFileDrop.SendFileDropCmd(rtkCommon.FILE_DROP_ACCEPT, fileFullName)
 		log.Printf("(DST) FilePath:[%s] confirm receipt", rtkGlobal.Handler.DstFilePath)
 	} else {
+		rtkFileDrop.SendFileDropCmd(rtkCommon.FILE_DROP_CANCEL, nil)
 		log.Printf("(DST) Filename:[%s] reject.", rtkGlobal.Handler.CopyFileName)
 	}
 }
